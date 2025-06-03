@@ -25,6 +25,49 @@ export interface TopProductos {
   ranking: number;
 }
 
+export interface VentasPorPlataforma {
+  plataforma: string;
+  total_ventas: number;
+  total_unidades: number;
+  total_documentos: number;
+  porcentaje_del_total: number;
+  margen_total: number;
+  porcentaje_margen: number;
+}
+
+export interface MargenPorSucursal {
+  sucursal: string;
+  empresa: string;
+  total_ventas: number;
+  total_margen: number;
+  porcentaje_margen: number;
+  ventas_con_costo: number;
+  ventas_sin_costo: number;
+  porcentaje_sin_costo: number;
+}
+
+export interface VentasPorCategoria {
+  tipo_producto_servicio: string;
+  sku: string;
+  producto_servicio: string;
+  variante: string;
+  total_ventas: number;
+  total_unidades: number;
+  total_margen: number;
+  porcentaje_margen: number;
+  total_documentos: number;
+  ranking: number;
+}
+
+export interface VentasComparativas {
+  periodo_actual: number;
+  periodo_anterior: number;
+  diferencia: number;
+  crecimiento_porcentual: number;
+  tipo: 'plataforma' | 'categoria' | 'producto';
+  nombre: string;
+}
+
 export interface TipoDocumento {
   tipo_documento: string;
   total_documentos: number;
@@ -287,4 +330,135 @@ export async function getResumenGeneral(filtros: Filtros = {}) {
   
   const result = await pool.query(query, params);
   return processResults(result.rows)[0];
+}
+
+// Ventas por plataforma con filtros
+export async function getVentasPorPlataforma(filtros: Filtros = {}): Promise<VentasPorPlataforma[]> {
+  const { whereClause, params } = buildWhereClause(filtros);
+  
+  const query = `
+    WITH ventas_totales AS (
+      SELECT SUM(subtotal_neto) as total_general
+      FROM ventas 
+      ${whereClause}
+    )
+    SELECT 
+      COALESCE(plataforma, 'Sin Especificar') as plataforma,
+      ROUND(SUM(subtotal_neto))::numeric as total_ventas,
+      SUM(cantidad)::numeric as total_unidades,
+      COUNT(DISTINCT nro_documento)::numeric as total_documentos,
+      ROUND((SUM(subtotal_neto) / vt.total_general) * 100, 2) as porcentaje_del_total,
+      ROUND(SUM(CASE WHEN margen_neto IS NOT NULL THEN margen_neto ELSE 0 END))::numeric as margen_total,
+      CASE 
+        WHEN SUM(CASE WHEN margen_neto IS NOT NULL THEN subtotal_neto ELSE 0 END) > 0 
+        THEN ROUND((SUM(CASE WHEN margen_neto IS NOT NULL THEN margen_neto ELSE 0 END) / 
+                    SUM(CASE WHEN margen_neto IS NOT NULL THEN subtotal_neto ELSE 0 END)) * 100, 2)
+        ELSE 0 
+      END as porcentaje_margen
+    FROM ventas 
+    CROSS JOIN ventas_totales vt
+    ${whereClause}
+    GROUP BY COALESCE(plataforma, 'Sin Especificar'), vt.total_general
+    ORDER BY total_ventas DESC;
+  `;
+  
+  const result = await pool.query(query, params);
+  return processResults(result.rows);
+}
+
+// Margen por sucursal con filtros
+export async function getMargenPorSucursal(filtros: Filtros = {}): Promise<MargenPorSucursal[]> {
+  const { whereClause, params } = buildWhereClause(filtros);
+  
+  const query = `
+    SELECT 
+      sucursal,
+      empresa,
+      ROUND(SUM(subtotal_neto))::numeric as total_ventas,
+      ROUND(SUM(CASE WHEN margen_neto IS NOT NULL THEN margen_neto ELSE 0 END))::numeric as total_margen,
+      CASE 
+        WHEN SUM(CASE WHEN margen_neto IS NOT NULL THEN subtotal_neto ELSE 0 END) > 0 
+        THEN ROUND((SUM(CASE WHEN margen_neto IS NOT NULL THEN margen_neto ELSE 0 END) / 
+                    SUM(CASE WHEN margen_neto IS NOT NULL THEN subtotal_neto ELSE 0 END)) * 100, 2)
+        ELSE 0 
+      END as porcentaje_margen,
+      ROUND(SUM(CASE WHEN margen_neto IS NOT NULL THEN subtotal_neto ELSE 0 END))::numeric as ventas_con_costo,
+      ROUND(SUM(CASE WHEN margen_neto IS NULL THEN subtotal_neto ELSE 0 END))::numeric as ventas_sin_costo,
+      CASE 
+        WHEN SUM(subtotal_neto) > 0 
+        THEN ROUND((SUM(CASE WHEN margen_neto IS NULL THEN subtotal_neto ELSE 0 END) / SUM(subtotal_neto)) * 100, 2)
+        ELSE 0 
+      END as porcentaje_sin_costo
+    FROM ventas 
+    ${whereClause}
+    GROUP BY sucursal, empresa
+    ORDER BY total_ventas DESC;
+  `;
+  
+  const result = await pool.query(query, params);
+  return processResults(result.rows);
+}
+
+// Ventas por categoría/productos con filtros
+export async function getVentasPorCategoria(limit: number = 20, filtros: Filtros = {}): Promise<VentasPorCategoria[]> {
+  const { whereClause, params } = buildWhereClause(filtros);
+  
+  // Agregamos el parámetro limit al final
+  const limitParam = params.length + 1;
+  params.push(limit);
+  
+  const query = `
+    SELECT 
+      COALESCE(tipo_producto_servicio, 'Sin Categoría') as tipo_producto_servicio,
+      sku,
+      producto_servicio,
+      COALESCE(variante, 'Sin Variante') as variante,
+      ROUND(SUM(subtotal_neto))::numeric as total_ventas,
+      SUM(cantidad)::numeric as total_unidades,
+      ROUND(SUM(CASE WHEN margen_neto IS NOT NULL THEN margen_neto ELSE 0 END))::numeric as total_margen,
+      CASE 
+        WHEN SUM(CASE WHEN margen_neto IS NOT NULL THEN subtotal_neto ELSE 0 END) > 0 
+        THEN ROUND((SUM(CASE WHEN margen_neto IS NOT NULL THEN margen_neto ELSE 0 END) / 
+                    SUM(CASE WHEN margen_neto IS NOT NULL THEN subtotal_neto ELSE 0 END)) * 100, 2)
+        ELSE 0 
+      END as porcentaje_margen,
+      COUNT(DISTINCT nro_documento)::numeric as total_documentos,
+      ROW_NUMBER() OVER (ORDER BY SUM(subtotal_neto) DESC) as ranking
+    FROM ventas 
+    ${whereClause}
+      ${whereClause.includes('WHERE') ? 'AND' : 'WHERE'} sku IS NOT NULL
+      AND producto_servicio IS NOT NULL
+    GROUP BY tipo_producto_servicio, sku, producto_servicio, variante
+    ORDER BY total_ventas DESC
+    LIMIT $${limitParam};
+  `;
+  
+  const result = await pool.query(query, params);
+  return processResults(result.rows);
+}
+
+// Obtener plataformas disponibles
+export async function getPlataformas(): Promise<string[]> {
+  const query = `
+    SELECT DISTINCT COALESCE(plataforma, 'Sin Especificar') as plataforma
+    FROM ventas 
+    WHERE fecha IS NOT NULL
+    ORDER BY plataforma;
+  `;
+  
+  const result = await pool.query(query);
+  return result.rows.map(row => row.plataforma);
+}
+
+// Obtener categorías disponibles
+export async function getCategorias(): Promise<string[]> {
+  const query = `
+    SELECT DISTINCT COALESCE(tipo_producto_servicio, 'Sin Categoría') as tipo_producto_servicio
+    FROM ventas 
+    WHERE fecha IS NOT NULL
+    ORDER BY tipo_producto_servicio;
+  `;
+  
+  const result = await pool.query(query);
+  return result.rows.map(row => row.tipo_producto_servicio);
 } 

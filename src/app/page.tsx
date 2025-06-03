@@ -1,13 +1,16 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { TrendingUp, Store, Package } from 'lucide-react';
+import { TrendingUp, Store, Package, BarChart3, Target, Layers, DollarSign } from 'lucide-react';
 import { 
   Filtros,
   VentasMensuales,
   VentasPorSucursal,
   TopProductos,
-  TipoDocumento
+  TipoDocumento,
+  VentasPorPlataforma,
+  MargenPorSucursal,
+  VentasPorCategoria
 } from '@/lib/queries';
 import VentasMensualesChart from '@/components/VentasMensualesChart';
 import VentasSucursalChart from '@/components/VentasSucursalChart';
@@ -15,6 +18,9 @@ import TopProductosTable from '@/components/TopProductosTable';
 import ResumenCards from '@/components/ResumenCards';
 import FilterPanel from '@/components/FilterPanel';
 import DateFilterPanel from '@/components/DateFilterPanel';
+import VentasPlataformaChart from '@/components/VentasPlataformaChart';
+import MargenSucursalChart from '@/components/MargenSucursalChart';
+import VentasCategoriaTable from '@/components/VentasCategoriaTable';
 
 export default function Dashboard() {
   // Estados para los datos
@@ -22,6 +28,11 @@ export default function Dashboard() {
   const [ventasSucursal, setVentasSucursal] = useState<VentasPorSucursal[]>([]);
   const [topProductos, setTopProductos] = useState<TopProductos[]>([]);
   const [resumen, setResumen] = useState<any>(null);
+  
+  // Estados para los nuevos datos
+  const [ventasPlataforma, setVentasPlataforma] = useState<VentasPorPlataforma[]>([]);
+  const [margenSucursal, setMargenSucursal] = useState<MargenPorSucursal[]>([]);
+  const [ventasCategoria, setVentasCategoria] = useState<VentasPorCategoria[]>([]);
   
   // Estados para opciones de filtros
   const [tiposDocumento, setTiposDocumento] = useState<TipoDocumento[]>([]);
@@ -138,6 +149,9 @@ export default function Dashboard() {
           setVentasMensuales([]);
           setVentasSucursal([]);
           setTopProductos([]);
+          setVentasPlataforma([]);
+          setMargenSucursal([]);
+          setVentasCategoria([]);
           setResumen({
             total_registros: 0,
             total_documentos: 0,
@@ -155,22 +169,39 @@ export default function Dashboard() {
           const allFilters = getAllFilters();
           const queryString = createUrlParams(allFilters);
           
-          const [ventasMenResponse, ventasSucResponse, topProdResponse, resumenResponse] = await Promise.all([
+          const [
+            ventasMenResponse, 
+            ventasSucResponse, 
+            topProdResponse, 
+            resumenResponse,
+            ventasPlataformaResponse,
+            margenSucursalResponse,
+            ventasCategoriaResponse
+          ] = await Promise.all([
             fetch('/api/ventas-mensuales?' + queryString),
             fetch('/api/ventas-sucursal?' + queryString),
             fetch('/api/top-productos?' + queryString),
-            fetch('/api/resumen?' + queryString)
+            fetch('/api/resumen?' + queryString),
+            fetch('/api/ventas-plataforma?' + queryString),
+            fetch('/api/margen-sucursal?' + queryString),
+            fetch('/api/ventas-categoria?' + queryString + '&limit=50')
           ]);
 
           const ventasMenData = await ventasMenResponse.json();
           const ventasSucData = await ventasSucResponse.json();
           const topProdData = await topProdResponse.json();
           const resumenData = await resumenResponse.json();
+          const ventasPlataformaData = await ventasPlataformaResponse.json();
+          const margenSucursalData = await margenSucursalResponse.json();
+          const ventasCategoriaData = await ventasCategoriaResponse.json();
 
           setVentasMensuales(ventasMenData);
           setVentasSucursal(ventasSucData);
           setTopProductos(topProdData);
           setResumen(resumenData);
+          setVentasPlataforma(ventasPlataformaData);
+          setMargenSucursal(margenSucursalData);
+          setVentasCategoria(ventasCategoriaData);
         }
       } catch (error) {
         console.error('Error cargando datos:', error);
@@ -218,7 +249,7 @@ export default function Dashboard() {
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <header className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-full mx-auto px-8 sm:px-12 lg:px-16">
           <div className="flex justify-between items-center py-6">
             <div className="flex items-center">
               {/* Logo */}
@@ -249,7 +280,7 @@ export default function Dashboard() {
       </header>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="max-w-full mx-auto px-8 sm:px-12 lg:px-16 py-8">
         {/* Panel de Filtros - Siempre visible */}
         <FilterPanel
           tiposDocumento={tiposDocumento}
@@ -307,7 +338,7 @@ export default function Dashboard() {
         </div>
 
         {/* Top Productos Table */}
-        <div className="bg-white p-6 rounded-lg shadow-sm border">
+        <div className="bg-white p-6 rounded-lg shadow-sm border mb-8">
           <div className="flex items-center mb-4">
             <Package className="h-6 w-6 text-purple-600 mr-2" />
             <h2 className="text-xl font-semibold text-gray-900">
@@ -318,6 +349,54 @@ export default function Dashboard() {
             <div className="animate-pulse bg-gray-200 h-64 rounded"></div>
           ) : (
             <TopProductosTable data={topProductos} />
+          )}
+        </div>
+
+        {/* Nueva sección: Ventas por Plataforma y Margen por Sucursal */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+          {/* Ventas por Plataforma */}
+          <div className="bg-white p-6 rounded-lg shadow-sm border">
+            <div className="flex items-center mb-4">
+              <Layers className="h-6 w-6 text-orange-600 mr-2" />
+              <h2 className="text-xl font-semibold text-gray-900">
+                Ventas por Plataforma
+              </h2>
+            </div>
+            {dataLoading ? (
+              <div className="animate-pulse bg-gray-200 h-64 rounded"></div>
+            ) : (
+              <VentasPlataformaChart data={ventasPlataforma} />
+            )}
+          </div>
+
+          {/* Margen por Sucursal */}
+          <div className="bg-white p-6 rounded-lg shadow-sm border">
+            <div className="flex items-center mb-4">
+              <DollarSign className="h-6 w-6 text-emerald-600 mr-2" />
+              <h2 className="text-xl font-semibold text-gray-900">
+                Margen por Sucursal
+              </h2>
+            </div>
+            {dataLoading ? (
+              <div className="animate-pulse bg-gray-200 h-64 rounded"></div>
+            ) : (
+              <MargenSucursalChart data={margenSucursal} />
+            )}
+          </div>
+        </div>
+
+        {/* Ventas por Categoría/Productos */}
+        <div className="bg-white p-6 rounded-lg shadow-sm border">
+          <div className="flex items-center mb-4">
+            <Target className="h-6 w-6 text-indigo-600 mr-2" />
+            <h2 className="text-xl font-semibold text-gray-900">
+              Ventas por Categoría/Productos y Variantes
+            </h2>
+          </div>
+          {dataLoading ? (
+            <div className="animate-pulse bg-gray-200 h-64 rounded"></div>
+          ) : (
+            <VentasCategoriaTable data={ventasCategoria} />
           )}
         </div>
       </main>
