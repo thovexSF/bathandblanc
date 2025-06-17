@@ -302,8 +302,8 @@ export default function VentasMensualesChart({ data: initialData, tiposDocumento
   // Calcular variación porcentual para cada mes
   const chartDataWithVariacion = chartData.map(item => ({
     ...item,
-    variacion: item.ventas_2024 > 0
-      ? ((item.ventas_2025 - item.ventas_2024) / item.ventas_2024) * 100
+    variacion: Number(item.ventas_2024) > 0
+      ? ((Number(item.ventas_2025) - Number(item.ventas_2024)) / Number(item.ventas_2024)) * 100
       : 0
   }));
 
@@ -373,6 +373,8 @@ export default function VentasMensualesChart({ data: initialData, tiposDocumento
       </table>
     </div>
   );
+
+  const filtrosAny = filtros as Record<string, any>;
 
   return (
     <div className="space-y-4">

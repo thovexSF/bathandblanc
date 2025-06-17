@@ -54,7 +54,7 @@ export default function VentasSucursalChart({
       ...f,
       tipoDocumento: tiposDocumento
         .map(t => t.tipo_documento)
-        .filter(td => td === 'Boleta' || td === 'Factura'),
+        .filter(td => td.toUpperCase().includes('BOLETA') || td.toUpperCase().includes('FACTURA')),
       plataforma: plataformas.map(p => p.plataforma),
       empresa: empresas
     }));
