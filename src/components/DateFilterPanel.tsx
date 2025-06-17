@@ -1,6 +1,5 @@
 'use client';
 
-import React from 'react';
 import { Calendar, X } from 'lucide-react';
 
 interface DateFilterPanelProps {

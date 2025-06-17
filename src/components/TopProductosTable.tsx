@@ -1,4 +1,3 @@
-import React from 'react';
 import { Download } from 'lucide-react';
 import { TopProductos } from '@/lib/queries';
 import * as XLSX from 'xlsx';

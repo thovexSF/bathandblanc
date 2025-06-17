@@ -1,6 +1,5 @@
 'use client';
 
-import React, { useState, useMemo, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LabelList } from 'recharts';
 import { Download, BarChart3, TrendingUp, Table, Copy, Calendar, Filter, X } from 'lucide-react';
 import { VentasMensuales, Filtros } from '@/lib/queries';
@@ -8,6 +7,7 @@ import * as XLSX from 'xlsx';
 import DatePicker from 'react-datepicker';
 import "react-datepicker/dist/react-datepicker.css";
 import FilterPanel from '@/components/FilterPanel';
+import { useState, useMemo, useEffect } from 'react';
 
 interface VentasMensualesChartProps {
   data: VentasMensuales[];

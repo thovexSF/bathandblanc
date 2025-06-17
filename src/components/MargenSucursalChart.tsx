@@ -1,6 +1,5 @@
 'use client';
 
-import React, { useState } from 'react';
 import { 
   BarChart, 
   Bar, 
@@ -15,6 +14,7 @@ import {
 } from 'recharts';
 import { MargenPorSucursal } from '@/lib/queries';
 import { BarChart3, Table as TableIcon } from 'lucide-react';
+import { useState } from 'react';
 
 interface MargenSucursalChartProps {
   data: MargenPorSucursal[];

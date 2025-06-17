@@ -1,10 +1,10 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LabelList } from 'recharts';
 import { Table, Download, Copy, Filter, X, Calendar } from 'lucide-react';
 import { VentasPorSucursal, TipoDocumento, Plataforma } from '@/lib/queries';
 import * as XLSX from 'xlsx';
+import { useState, useEffect } from 'react';
 
 interface VentasSucursalChartProps {
   data: VentasPorSucursal[];

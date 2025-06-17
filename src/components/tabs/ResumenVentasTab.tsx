@@ -14,7 +14,6 @@ import VentasMensualesChart from '@/components/VentasMensualesChart';
 import VentasSucursalChart from '@/components/VentasSucursalChart';
 import VentasPlataformaChart from '@/components/VentasPlataformaChart';
 import MargenSucursalChart from '@/components/MargenSucursalChart';
-import VentasFiltradasChart from '@/components/VentasFiltradasChart';
 
 interface ResumenVentasTabProps {
   ventasMensuales: VentasMensuales[];

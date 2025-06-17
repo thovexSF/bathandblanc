@@ -1,6 +1,5 @@
 'use client';
 
-import React, { useState } from 'react';
 import { 
   BarChart, 
   Bar, 
@@ -16,6 +15,7 @@ import {
 } from 'recharts';
 import { VentasPorPlataforma } from '@/lib/queries';
 import { BarChart3, Table as TableIcon } from 'lucide-react';
+import { useState } from 'react';
 
 interface VentasPlataformaChartProps {
   data: VentasPorPlataforma[];

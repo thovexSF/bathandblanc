@@ -1,10 +1,10 @@
 'use client';
 
-import React, { useState } from 'react';
 import { Filter, X, Calendar, ChevronDown } from 'lucide-react';
 import { TipoDocumento, Plataforma, Filtros } from '@/lib/queries';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
+import { useState } from 'react';
 
 interface FilterPanelProps {
   tiposDocumento: TipoDocumento[];

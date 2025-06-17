@@ -1,6 +1,5 @@
 'use client';
 
-import React from 'react';
 import { TrendingUp, Package, Archive } from 'lucide-react';
 
 interface TabNavigationProps {
