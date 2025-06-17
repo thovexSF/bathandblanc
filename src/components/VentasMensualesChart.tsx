@@ -1,13 +1,20 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { Download, BarChart3, TrendingUp, Table, Copy, Calendar } from 'lucide-react';
-import { VentasMensuales } from '@/lib/queries';
+import React, { useState, useMemo, useEffect } from 'react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LabelList } from 'recharts';
+import { Download, BarChart3, TrendingUp, Table, Copy, Calendar, Filter, X } from 'lucide-react';
+import { VentasMensuales, Filtros } from '@/lib/queries';
 import * as XLSX from 'xlsx';
+import DatePicker from 'react-datepicker';
+import "react-datepicker/dist/react-datepicker.css";
+import FilterPanel from '@/components/FilterPanel';
 
 interface VentasMensualesChartProps {
   data: VentasMensuales[];
+  tiposDocumento: any[];
+  plataformas: any[];
+  empresas: string[];
+  sucursales: string[];
 }
 
 interface VentasAcumuladas {
@@ -23,12 +30,84 @@ interface VentasAcumuladas {
   crecimiento_porcentual_acum: number;
 }
 
-export default function VentasMensualesChart({ data }: VentasMensualesChartProps) {
+const MONTHS = [1,2,3,4,5,6,7,8,9,10,11,12];
+const DAYS = Array.from({ length: 31 }, (_, i) => i + 1);
+
+export default function VentasMensualesChart({ data: initialData, tiposDocumento, plataformas, empresas, sucursales }: VentasMensualesChartProps) {
+  const [availableYears, setAvailableYears] = useState<number[]>([]);
+  const [selectedYears, setSelectedYears] = useState<number[]>([]);
+  const [selectedMonths, setSelectedMonths] = useState<number[]>(MONTHS);
+  const [selectedDays, setSelectedDays] = useState<number[]>(DAYS);
+  const [chartData, setChartData] = useState<VentasMensuales[]>(initialData);
+  const [loading, setLoading] = useState(false);
   const [showAccumulated, setShowAccumulated] = useState(false);
   const [showTable, setShowTable] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
   const [maxMonth, setMaxMonth] = useState<number>(12);
+  const [startDate, setStartDate] = useState<Date | null>(null);
+  const [endDate, setEndDate] = useState<Date | null>(null);
+  const [viewMode, setViewMode] = useState<'mensual' | 'diaria' | 'anual'>('mensual');
+  const [filtros, setFiltros] = useState<{ tipoDocumento?: string[]; plataforma?: string[]; empresa?: string[] }>({});
 
-  // Helper function para conversión segura
+  useEffect(() => {
+    fetch('/api/available-years')
+      .then(res => res.json())
+      .then(data => {
+        setAvailableYears(data.years);
+        setSelectedYears(data.years);
+      });
+  }, []);
+
+  useEffect(() => {
+    setFiltros(f => ({
+      ...f,
+      tipoDocumento: tiposDocumento
+        .map(t => t.tipo_documento)
+        .filter(td => td.toUpperCase().includes('BOLETA') || td.toUpperCase().includes('FACTURA')),
+      plataforma: plataformas.map(p => p.plataforma),
+      empresa: empresas
+    }));
+  }, [tiposDocumento, plataformas, empresas]);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      try {
+        const params = new URLSearchParams();
+        Object.entries(filtros).forEach(([key, values]) => {
+          if (Array.isArray(values)) {
+            values.forEach((v) => params.append(key, v.toString()));
+          } else if (values) {
+            params.append(key, values.toString());
+          }
+        });
+        selectedYears.forEach((y) => params.append('años', y.toString()));
+        selectedMonths.forEach((m) => params.append('meses', m.toString()));
+        selectedDays.forEach((d) => params.append('dias', d.toString()));
+        params.append('viewMode', viewMode);
+        const res = await fetch(`/api/ventas-mensuales?${params.toString()}`);
+        const json = await res.json();
+        setChartData(json);
+      } catch (e) {
+        setChartData([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, [filtros, selectedYears, selectedMonths, selectedDays, viewMode]);
+
+  const handleLocalFiltrosChange = (f: Filtros) => {
+    setFiltros(f);
+    if (f.años) setSelectedYears(f.años);
+    if (f.meses) setSelectedMonths(f.meses);
+    if (f.dias) setSelectedDays(f.dias);
+  };
+
+  const handleDaysChange = (days: number[]) => {
+    setSelectedDays(days);
+  };
+
   const toNumber = (value: string | number): number => {
     return typeof value === 'string' ? parseFloat(value) || 0 : value;
   };
@@ -61,12 +140,9 @@ export default function VentasMensualesChart({ data }: VentasMensualesChartProps
     }).format(value);
   };
 
-  // Calcular datos acumulados
   const dataWithAccumulated = useMemo((): VentasAcumuladas[] => {
-    // Primero ordenar los datos por mes para asegurar el cálculo correcto del acumulado
-    const sortedData = [...data].sort((a, b) => a.mes - b.mes);
+    const sortedData = [...chartData].sort((a, b) => a.mes - b.mes);
     
-    // Encontrar el último mes con datos reales para cada año
     const lastMonthWith2024Data = sortedData.findLast(item => toNumber(item.ventas_2024) > 0)?.mes || 0;
     const lastMonthWith2025Data = sortedData.findLast(item => toNumber(item.ventas_2025) > 0)?.mes || 0;
     const lastMonthWithData = Math.max(lastMonthWith2024Data, lastMonthWith2025Data);
@@ -75,7 +151,6 @@ export default function VentasMensualesChart({ data }: VentasMensualesChartProps
     let acum2025 = 0;
     
     const result = sortedData.map((item) => {
-      // Convertir strings a números de forma segura
       const ventas2024 = toNumber(item.ventas_2024);
       const ventas2025 = toNumber(item.ventas_2025);
       const diferencia = toNumber(item.diferencia);
@@ -105,26 +180,28 @@ export default function VentasMensualesChart({ data }: VentasMensualesChartProps
       return itemWithAccum;
     });
     
-    // Filtrar solo hasta el último mes con datos cuando estamos en modo acumulado
     const filteredResult = showAccumulated ? 
       result.filter(item => item.mes <= lastMonthWithData) : 
       result;
     
     return filteredResult;
-  }, [data, showAccumulated]);
+  }, [chartData, showAccumulated]);
 
-  // Filtrar por mes máximo seleccionado
   const finalData = useMemo(() => {
-    const baseData = showAccumulated ? dataWithAccumulated : data;
+    const baseData = showAccumulated ? dataWithAccumulated : chartData;
     return baseData.filter(item => item.mes <= maxMonth);
-  }, [showAccumulated, dataWithAccumulated, data, maxMonth]);
+  }, [showAccumulated, dataWithAccumulated, chartData, maxMonth]);
 
   const displayData = finalData;
   const dataKey2024 = showAccumulated ? 'ventas_2024_acum' : 'ventas_2024';
   const dataKey2025 = showAccumulated ? 'ventas_2025_acum' : 'ventas_2025';
 
+  const totalVendido = displayData.reduce((acc, item) => acc + toNumber(item.ventas_2024) + toNumber(item.ventas_2025), 0);
+
+  const totalMargen = displayData.reduce((acc, item) => acc + (item.margen ? toNumber(item.margen) : 0), 0);
+  const totalStock = displayData.reduce((acc, item) => acc + (item.stock ? toNumber(item.stock) : 0), 0);
+
   const exportToExcel = () => {
-    // Preparar datos para la exportación
     const exportData = dataWithAccumulated.map((item) => ({
       'Mes': item.mes_nombre,
       'Ventas 2024': formatCurrencyFull(item.ventas_2024),
@@ -137,10 +214,8 @@ export default function VentasMensualesChart({ data }: VentasMensualesChartProps
       'Crecimiento Acumulado %': `${item.crecimiento_porcentual_acum}%`
     }));
 
-    // Crear libro de trabajo
     const wb = XLSX.utils.book_new();
     
-    // Hoja 1: Comparativo Mensual
     const wsMensual = XLSX.utils.json_to_sheet(exportData.map(item => ({
       'Mes': item.Mes,
       'Ventas 2024': item['Ventas 2024'],
@@ -149,7 +224,6 @@ export default function VentasMensualesChart({ data }: VentasMensualesChartProps
       'Crecimiento %': item['Crecimiento %']
     })));
     
-    // Hoja 2: Comparativo Acumulado
     const wsAcumulado = XLSX.utils.json_to_sheet(exportData.map(item => ({
       'Mes': item.Mes,
       'Ventas 2024 Acumulado': item['Ventas 2024 Acumulado'],
@@ -158,11 +232,9 @@ export default function VentasMensualesChart({ data }: VentasMensualesChartProps
       'Crecimiento Acumulado %': item['Crecimiento Acumulado %']
     })));
 
-    // Agregar hojas al libro
     XLSX.utils.book_append_sheet(wb, wsMensual, 'Comparativo Mensual');
     XLSX.utils.book_append_sheet(wb, wsAcumulado, 'Comparativo Acumulado');
 
-    // Descargar archivo
     const fecha = new Date().toLocaleDateString('es-CL').replace(/\//g, '-');
     XLSX.writeFile(wb, `Ventas_Comparativas_${fecha}.xlsx`);
   };
@@ -197,7 +269,6 @@ export default function VentasMensualesChart({ data }: VentasMensualesChartProps
     
     try {
       await navigator.clipboard.writeText(tableText);
-      // Aquí podrías agregar una notificación de éxito
       alert('Tabla copiada al portapapeles');
     } catch (err) {
       console.error('Error al copiar tabla:', err);
@@ -207,66 +278,38 @@ export default function VentasMensualesChart({ data }: VentasMensualesChartProps
 
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
-      const item = showAccumulated 
-        ? dataWithAccumulated.find(d => d.mes_nombre === label) as VentasAcumuladas
-        : data.find(d => d.mes_nombre === label);
-        
+      const data = payload[0].payload;
       return (
-        <div className="bg-white p-4 border border-gray-200 rounded-lg shadow-lg">
-          <p className="font-semibold text-gray-900 mb-2">{label}</p>
-          {payload.map((entry: any, index: number) => (
-            <div key={index} className="flex items-center space-x-2">
-              <div 
-                className="w-3 h-3 rounded-full" 
-                style={{ backgroundColor: entry.color }}
-              />
-              <span className="text-sm text-gray-600">{entry.name}:</span>
-              <span className="font-medium">{formatCurrency(entry.value)}</span>
-            </div>
-          ))}
-          {item && (
-            <div className="mt-2 pt-2 border-t border-gray-200">
-              <div className="text-sm">
-                <span className="text-gray-600">
-                  {showAccumulated ? 'Diferencia acumulada: ' : 'Diferencia: '}
-                </span>
-                <span className={`font-medium ${
-                  (showAccumulated 
-                    ? (item as VentasAcumuladas).diferencia_acum 
-                    : toNumber((item as any).diferencia)
-                  ) >= 0 
-                    ? 'text-green-600' : 'text-red-600'
-                }`}>
-                  {formatCurrency(showAccumulated 
-                    ? (item as VentasAcumuladas).diferencia_acum 
-                    : toNumber((item as any).diferencia)
-                  )}
-                </span>
-              </div>
-              <div className="text-sm">
-                <span className="text-gray-600">Crecimiento: </span>
-                <span className={`font-medium ${
-                  (showAccumulated 
-                    ? (item as VentasAcumuladas).crecimiento_porcentual_acum 
-                    : toNumber((item as any).crecimiento_porcentual)
-                  ) >= 0 
-                    ? 'text-green-600' : 'text-red-600'
-                }`}>
-                  {showAccumulated 
-                    ? (item as VentasAcumuladas).crecimiento_porcentual_acum 
-                    : toNumber((item as any).crecimiento_porcentual)
-                  }%
-                </span>
-              </div>
-            </div>
-          )}
+        <div className="bg-white p-3 border border-gray-200 rounded-lg shadow-lg">
+          <p className="font-semibold text-gray-900">{label}</p>
+          <div className="text-sm text-gray-700">Ventas 2024: <span className="font-medium">{data.ventas_2024?.toLocaleString('es-CL')}</span></div>
+          <div className="text-sm text-gray-700">Ventas 2025: <span className="font-medium">{data.ventas_2025?.toLocaleString('es-CL')}</span></div>
+          <div className="text-sm text-blue-700 font-semibold">Variación: {data.variacion?.toFixed(1)}%</div>
         </div>
       );
     }
     return null;
   };
 
-  if (!data || data.length === 0) {
+  let xKey = 'mes';
+  let xLabel = 'mes_nombre';
+  if (viewMode === 'diaria') {
+    xKey = 'dia';
+    xLabel = 'dia_nombre';
+  } else if (viewMode === 'anual') {
+    xKey = 'año';
+    xLabel = 'año_nombre';
+  }
+
+  // Calcular variación porcentual para cada mes
+  const chartDataWithVariacion = chartData.map(item => ({
+    ...item,
+    variacion: item.ventas_2024 > 0
+      ? ((item.ventas_2025 - item.ventas_2024) / item.ventas_2024) * 100
+      : 0
+  }));
+
+  if (!chartData || chartData.length === 0) {
     return (
       <div className="flex items-center justify-center h-64 text-gray-500">
         No hay datos disponibles
@@ -334,126 +377,363 @@ export default function VentasMensualesChart({ data }: VentasMensualesChartProps
   );
 
   return (
-    <div>
-      {/* Controles */}
-      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-        <div className="flex items-center space-x-2 flex-wrap">
-          {/* Tipo de vista */}
-          <button
-            onClick={() => {
-              setShowAccumulated(false);
-            }}
-            className={`flex items-center px-3 py-1 rounded-md text-sm font-medium transition-colors ${
-              !showAccumulated 
-                ? 'bg-blue-100 text-blue-700' 
-                : 'text-gray-600 hover:text-gray-900'
-            }`}
-          >
-            <BarChart3 className="h-4 w-4 mr-1" />
-            Mensual
-          </button>
-          <button
-            onClick={() => {
-              setShowAccumulated(true);
-            }}
-            className={`flex items-center px-3 py-1 rounded-md text-sm font-medium transition-colors ${
-              showAccumulated 
-                ? 'bg-green-100 text-green-700' 
-                : 'text-gray-600 hover:text-gray-900'
-            }`}
-          >
-            <TrendingUp className="h-4 w-4 mr-1" />
-            Acumulado
-          </button>
-
-          {/* Vista gráfico/tabla */}
-          <div className="h-4 w-px bg-gray-300 mx-2"></div>
-          <button
-            onClick={() => setShowTable(!showTable)}
-            className={`flex items-center px-3 py-1 rounded-md text-sm font-medium transition-colors ${
-              showTable 
-                ? 'bg-purple-100 text-purple-700' 
-                : 'text-gray-600 hover:text-gray-900'
-            }`}
-          >
-            <Table className="h-4 w-4 mr-1" />
-            {showTable ? 'Ver Gráfico' : 'Ver Tabla'}
-          </button>
-
-          {/* Selector de mes límite */}
-          <div className="flex items-center space-x-1">
-            <Calendar className="h-4 w-4 text-gray-500" />
-            <label className="text-sm text-gray-600">Hasta:</label>
-            <select
-              value={maxMonth}
-              onChange={(e) => setMaxMonth(parseInt(e.target.value))}
-              className="text-sm border border-gray-300 rounded px-2 py-1"
-            >
-              {data.map(item => (
-                <option key={item.mes} value={item.mes}>
-                  {item.mes_nombre}
-                </option>
+    <div className="space-y-4">
+      <div className="bg-white p-4 rounded-lg border mb-4">
+        <div className="flex items-center mb-3">
+          <Calendar className="h-4 w-4 text-gray-500 mr-2" />
+          <h4 className="text-sm font-medium text-gray-900">Filtros de Fecha</h4>
+          {(selectedYears.length > 0 || selectedMonths.length > 0 || selectedDays.length > 0) && (
+            <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded-full">
+              {selectedYears.length + selectedMonths.length + selectedDays.length} seleccionado(s)
+            </span>
+          )}
+        </div>
+        <div className="mb-3">
+          <div className="flex items-center space-x-3">
+            <h5 className="text-xs font-medium text-gray-600 w-12">Años:</h5>
+            <div className="flex space-x-2">
+              {availableYears.map(year => (
+                <label key={year} className="flex items-center space-x-1 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={selectedYears.includes(year)}
+                    onChange={() => setSelectedYears(selectedYears.includes(year) ? selectedYears.filter(y => y !== year) : [...selectedYears, year])}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 w-3 h-3"
+                  />
+                  <span className="text-xs text-gray-700">{year}</span>
+                </label>
               ))}
-            </select>
+              <label className="flex items-center space-x-1 cursor-pointer bg-gray-100 px-2 py-1 rounded">
+                <input
+                  type="checkbox"
+                  checked={selectedYears.length === availableYears.length}
+                  onChange={() => setSelectedYears(selectedYears.length === availableYears.length ? [] : availableYears)}
+                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 w-3 h-3"
+                />
+                <span className="text-xs text-gray-700 font-medium">Todos</span>
+              </label>
+            </div>
           </div>
         </div>
-        
-        <div className="flex items-center space-x-2">
-          {showTable && (
-            <button
-              onClick={copyTableToClipboard}
-              className="flex items-center px-3 py-1 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded-md text-sm font-medium transition-colors"
-            >
-              <Copy className="h-4 w-4 mr-1" />
-              Copiar Tabla
-            </button>
+        <div className="mb-3">
+          <div className="flex items-center space-x-3">
+            <h5 className="text-xs font-medium text-gray-600 w-12">Meses:</h5>
+            <div className="flex flex-wrap gap-2">
+              {MONTHS.map(month => (
+                <label key={month} className="flex items-center space-x-1 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={selectedMonths.includes(month)}
+                    onChange={() => setSelectedMonths(selectedMonths.includes(month) ? selectedMonths.filter(m => m !== month) : [...selectedMonths, month])}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 w-3 h-3"
+                  />
+                  <span className="text-xs text-gray-700">{month}</span>
+                </label>
+              ))}
+              <label className="flex items-center space-x-1 cursor-pointer bg-gray-100 px-2 py-1 rounded">
+                <input
+                  type="checkbox"
+                  checked={selectedMonths.length === MONTHS.length}
+                  onChange={() => setSelectedMonths(selectedMonths.length === MONTHS.length ? [] : MONTHS)}
+                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 w-3 h-3"
+                />
+                <span className="text-xs text-gray-700 font-medium">Todos</span>
+              </label>
+            </div>
+          </div>
+        </div>
+        <div className="mb-3">
+          <div className="flex items-center space-x-3">
+            <h5 className="text-xs font-medium text-gray-600 w-12">Días:</h5>
+            <div className="flex flex-wrap gap-2">
+              {DAYS.map(day => (
+                <label key={day} className="flex items-center space-x-1 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={selectedDays.includes(day)}
+                    onChange={() => setSelectedDays(selectedDays.includes(day) ? selectedDays.filter(d => d !== day) : [...selectedDays, day])}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 w-3 h-3"
+                  />
+                  <span className="text-xs text-gray-700">{day}</span>
+                </label>
+              ))}
+              <label className="flex items-center space-x-1 cursor-pointer bg-gray-100 px-2 py-1 rounded">
+                <input
+                  type="checkbox"
+                  checked={selectedDays.length === DAYS.length}
+                  onChange={() => setSelectedDays(selectedDays.length === DAYS.length ? [] : DAYS)}
+                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 w-3 h-3"
+                />
+                <span className="text-xs text-gray-700 font-medium">Todos</span>
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="relative mb-4">
+        <button
+          onClick={() => setShowFilters(!showFilters)}
+          className="flex items-center space-x-2 px-4 py-2 bg-white border border-gray-200 rounded-lg shadow-sm hover:bg-gray-50 transition-colors"
+        >
+          <Filter className="h-5 w-5 text-blue-600" />
+          <span className="text-sm font-medium text-gray-700">Filtros adicionales</span>
+          {Object.keys(filtros).filter(key => Array.isArray(filtros[key]) && filtros[key].length > 0).length > 0 && (
+            <span className="bg-blue-100 text-blue-800 text-xs font-medium px-2.5 py-0.5 rounded-full">
+              {Object.keys(filtros).filter(key => Array.isArray(filtros[key]) && filtros[key].length > 0).length}
+            </span>
           )}
+        </button>
+        {showFilters && (
+          <div className="absolute z-50 mt-2 w-[400px] bg-white rounded-lg shadow-lg border border-gray-200 p-4">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">Filtros adicionales</h3>
+              <div className="flex items-center space-x-2">
+                {Object.keys(filtros).filter(key => Array.isArray(filtros[key]) && filtros[key].length > 0).length > 0 && (
+                  <button
+                    onClick={() => {
+                      Object.keys(filtros).forEach(key => {
+                        if (Array.isArray(filtros[key])) {
+                          setFiltros(f => ({
+                            ...f,
+                            [key]: []
+                          }));
+                        }
+                      });
+                    }}
+                    className="text-sm text-gray-500 hover:text-gray-700 flex items-center"
+                  >
+                    <X className="h-4 w-4 mr-1" />
+                    Limpiar todo
+                  </button>
+                )}
+                <button
+                  onClick={() => setShowFilters(false)}
+                  className="text-sm text-gray-500 hover:text-gray-700"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-sm font-medium text-gray-700">
+                    Tipo de Documento
+                  </label>
+                  {filtros.tipoDocumento && filtros.tipoDocumento.length > 0 && (
+                    <button
+                      onClick={() => setFiltros(f => ({ ...f, tipoDocumento: [] }))}
+                      className="text-xs text-gray-500 hover:text-gray-700"
+                    >
+                      Limpiar
+                    </button>
+                  )}
+                </div>
+                <div className="max-h-40 overflow-y-auto space-y-2 border border-gray-200 rounded-md p-2">
+                  {tiposDocumento.map((tipo) => (
+                    <label key={tipo.tipo_documento} className="flex items-center space-x-2 text-sm cursor-pointer hover:bg-gray-50 p-1 rounded">
+                      <input
+                        type="checkbox"
+                        checked={filtros.tipoDocumento?.includes(tipo.tipo_documento) || false}
+                        onChange={(e) => setFiltros(f => ({
+                          ...f,
+                          tipoDocumento: e.target.checked ? [...(f.tipoDocumento || []), tipo.tipo_documento] : f.tipoDocumento?.filter(td => td !== tipo.tipo_documento)
+                        }))}
+                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <span className="flex-1">
+                        {tipo.tipo_documento} <span className="text-gray-500">({tipo.total_documentos?.toLocaleString('es-CL') ?? 0})</span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-sm font-medium text-gray-700">
+                    Plataforma
+                  </label>
+                  {filtros.plataforma && filtros.plataforma.length > 0 && (
+                    <button
+                      onClick={() => setFiltros(f => ({ ...f, plataforma: [] }))}
+                      className="text-xs text-gray-500 hover:text-gray-700"
+                    >
+                      Limpiar
+                    </button>
+                  )}
+                </div>
+                <div className="max-h-40 overflow-y-auto space-y-2 border border-gray-200 rounded-md p-2">
+                  {plataformas.map((plataforma) => (
+                    <label key={plataforma.plataforma} className="flex items-center space-x-2 text-sm cursor-pointer hover:bg-gray-50 p-1 rounded">
+                      <input
+                        type="checkbox"
+                        checked={filtros.plataforma?.includes(plataforma.plataforma) || false}
+                        onChange={(e) => setFiltros(f => ({
+                          ...f,
+                          plataforma: e.target.checked ? [...(f.plataforma || []), plataforma.plataforma] : f.plataforma?.filter(p => p !== plataforma.plataforma)
+                        }))}
+                        className="rounded border-gray-300 text-yellow-600 focus:ring-yellow-500"
+                      />
+                      <span className="flex-1">
+                        {plataforma.plataforma} <span className="text-gray-500">({plataforma.total_documentos?.toLocaleString('es-CL') ?? 0})</span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-sm font-medium text-gray-700">
+                    Empresa
+                  </label>
+                  {filtros.empresa && filtros.empresa.length > 0 && (
+                    <button
+                      onClick={() => setFiltros(f => ({ ...f, empresa: [] }))}
+                      className="text-xs text-gray-500 hover:text-gray-700"
+                    >
+                      Limpiar
+                    </button>
+                  )}
+                </div>
+                <div className="max-h-40 overflow-y-auto space-y-2 border border-gray-200 rounded-md p-2">
+                  {empresas.map((empresa) => (
+                    <label key={empresa} className="flex items-center space-x-2 text-sm cursor-pointer hover:bg-gray-50 p-1 rounded">
+                      <input
+                        type="checkbox"
+                        checked={filtros.empresa?.includes(empresa) || false}
+                        onChange={(e) => setFiltros(f => ({
+                          ...f,
+                          empresa: e.target.checked ? [...(f.empresa || []), empresa] : f.empresa?.filter(e => e !== empresa)
+                        }))}
+                        className="rounded border-gray-300 text-green-600 focus:ring-green-500"
+                      />
+                      <span className="flex-1">{empresa}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+      <div className="flex items-center gap-2 mb-2">
+        <button
+          className={`px-4 py-1 rounded-full text-sm font-medium border transition-colors ${viewMode === 'mensual' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-blue-600 border-blue-200 hover:bg-blue-50'}`}
+          onClick={() => setViewMode('mensual')}
+        >
+          Mensual
+        </button>
+        <button
+          className={`px-4 py-1 rounded-full text-sm font-medium border transition-colors ${viewMode === 'diaria' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-blue-600 border-blue-200 hover:bg-blue-50'}`}
+          onClick={() => setViewMode('diaria')}
+        >
+          Diaria
+        </button>
+        <button
+          className={`px-4 py-1 rounded-full text-sm font-medium border transition-colors ${viewMode === 'anual' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-blue-600 border-blue-200 hover:bg-blue-50'}`}
+          onClick={() => setViewMode('anual')}
+        >
+          Anual
+        </button>
+      </div>
+      <div className="flex items-center mb-2 gap-8">
+        <div>
+          <span className="text-lg font-semibold text-gray-700 mr-2">Total vendido:</span>
+          <span className="text-2xl font-bold text-blue-700">{formatCurrency(totalVendido)}</span>
+        </div>
+        <div>
+          <span className="text-lg font-semibold text-gray-700 mr-2">Margen:</span>
+          <span className="text-2xl font-bold text-green-700">{formatCurrency(totalMargen)}</span>
+        </div>
+        <div>
+          <span className="text-lg font-semibold text-gray-700 mr-2">Stock:</span>
+          <span className="text-2xl font-bold text-purple-700">{totalStock > 0 ? totalStock : '-'}</span>
+        </div>
+      </div>
+      <div className="flex justify-between items-center">
+        <div className="flex items-center space-x-2">
+          <button
+            onClick={() => setShowTable(false)}
+            className={`flex items-center space-x-1 px-3 py-1 rounded-md text-sm font-medium transition-colors ${
+              !showTable 
+                ? 'bg-blue-100 text-blue-700' 
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            <BarChart3 className="h-4 w-4" />
+            <span>Gráfico</span>
+          </button>
+          <button
+            onClick={() => setShowTable(true)}
+            className={`flex items-center space-x-1 px-3 py-1 rounded-md text-sm font-medium transition-colors ${
+              showTable 
+                ? 'bg-blue-100 text-blue-700' 
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            <Table className="h-4 w-4" />
+            <span>Tabla</span>
+          </button>
           <button
             onClick={exportToExcel}
-            className="flex items-center px-3 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md text-sm font-medium transition-colors"
+            className="flex items-center space-x-1 px-3 py-1 rounded-md text-sm font-medium bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
           >
-            <Download className="h-4 w-4 mr-1" />
-            Exportar Excel
+            <Download className="h-4 w-4" />
+            <span>Excel</span>
+          </button>
+          <button
+            onClick={copyTableToClipboard}
+            className="flex items-center space-x-1 px-3 py-1 rounded-md text-sm font-medium bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
+          >
+            <Copy className="h-4 w-4" />
+            <span>Copiar</span>
           </button>
         </div>
       </div>
 
-      {/* Contenido */}
       {showTable ? (
         <TableView />
       ) : (
-        <div className="h-64">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={displayData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis 
-                dataKey="mes_nombre" 
-                stroke="#6b7280"
-                fontSize={12}
-                angle={-45}
-                textAnchor="end"
-                height={60}
-              />
-              <YAxis 
-                stroke="#6b7280"
-                fontSize={12}
-                tickFormatter={formatCurrency}
-              />
-              <Tooltip content={<CustomTooltip />} />
-              <Legend />
-              <Bar 
-                dataKey={dataKey2024}
-                name={showAccumulated ? "2024 Acumulado" : "2024"} 
-                fill="#3b82f6" 
-                radius={[2, 2, 0, 0]}
-              />
-              <Bar 
-                dataKey={dataKey2025}
-                name={showAccumulated ? "2025 Acumulado" : "2025"} 
-                fill="#10b981" 
-                radius={[2, 2, 0, 0]}
-              />
-            </BarChart>
+        <div className="bg-white p-4 rounded-lg border">
+          <ResponsiveContainer width="100%" height={400}>
+            {loading ? (
+              <div className="h-64 flex items-center justify-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+              </div>
+            ) : (
+              <BarChart data={chartDataWithVariacion} margin={{ top: 20, right: 30, left: 20, bottom: 50 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis 
+                  dataKey={xLabel}
+                  stroke="#6b7280"
+                  fontSize={11}
+                  angle={viewMode === 'diaria' ? 0 : -45}
+                  textAnchor={viewMode === 'diaria' ? 'middle' : 'end'}
+                  height={viewMode === 'diaria' ? 40 : 80}
+                />
+                <YAxis 
+                  stroke="#6b7280"
+                  fontSize={11}
+                  tickFormatter={formatCurrencyTable}
+                />
+                <Tooltip />
+                <Legend />
+                <Bar 
+                  dataKey="ventas_2024"
+                  name="2024" 
+                  fill="#3b82f6" 
+                  radius={[2, 2, 0, 0]}
+                />
+                <Bar 
+                  dataKey="ventas_2025"
+                  name="2025" 
+                  fill="#10b981" 
+                  radius={[2, 2, 0, 0]}
+                >
+                  <LabelList dataKey="variacion" position="top" formatter={value => `${value.toFixed(1)}%`} />
+                </Bar>
+              </BarChart>
+            )}
           </ResponsiveContainer>
         </div>
       )}

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getVentasMensuales, Filtros } from '@/lib/queries';
+import { getVentasFiltradas, Filtros } from '@/lib/queries';
 
 export async function GET(request: NextRequest) {
   try {
@@ -9,9 +9,9 @@ export async function GET(request: NextRequest) {
       tipoDocumento: searchParams.getAll('tipoDocumento').filter(Boolean),
       empresa: searchParams.getAll('empresa').filter(Boolean),
       sucursal: searchParams.getAll('sucursal').filter(Boolean),
+      plataforma: searchParams.getAll('plataforma').filter(Boolean),
       años: searchParams.getAll('años').filter(Boolean).map(Number),
       meses: searchParams.getAll('meses').filter(Boolean).map(Number),
-      dias: searchParams.getAll('dias').filter(Boolean).map(Number),
     };
 
     // Limpiar filtros vacíos
@@ -22,12 +22,11 @@ export async function GET(request: NextRequest) {
       }
     });
 
-    const viewMode = searchParams.get('viewMode') || 'mensual';
-
-    const ventas = await getVentasMensuales(filtros, viewMode);
+    const ventas = await getVentasFiltradas(filtros);
+    
     return NextResponse.json(ventas);
   } catch (error) {
-    console.error('Error obteniendo ventas mensuales:', error);
+    console.error('Error obteniendo ventas filtradas:', error);
     return NextResponse.json(
       { error: 'Error interno del servidor' },
       { status: 500 }

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getMargenPorSucursal, Filtros } from '@/lib/queries';
+import { getMargenPorSucursalComparativo, Filtros } from '@/lib/queries';
 
 export async function GET(request: NextRequest) {
   try {
@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
     if (años.length > 0) filtros.años = años;
     if (meses.length > 0) filtros.meses = meses;
     
-    const data = await getMargenPorSucursal(filtros);
+    const data = await getMargenPorSucursalComparativo(filtros);
     
     return NextResponse.json(data);
   } catch (error) {

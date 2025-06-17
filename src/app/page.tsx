@@ -8,19 +8,23 @@ import {
   VentasPorSucursal,
   TopProductos,
   TipoDocumento,
+  Plataforma,
   VentasPorPlataforma,
   MargenPorSucursal,
-  VentasPorCategoria
+  VentasPorCategoria,
+  VentasFiltradas
 } from '@/lib/queries';
 import VentasMensualesChart from '@/components/VentasMensualesChart';
 import VentasSucursalChart from '@/components/VentasSucursalChart';
 import TopProductosTable from '@/components/TopProductosTable';
-import ResumenCards from '@/components/ResumenCards';
 import FilterPanel from '@/components/FilterPanel';
-import DateFilterPanel from '@/components/DateFilterPanel';
 import VentasPlataformaChart from '@/components/VentasPlataformaChart';
 import MargenSucursalChart from '@/components/MargenSucursalChart';
 import VentasCategoriaTable from '@/components/VentasCategoriaTable';
+import TabNavigation from '@/components/TabNavigation';
+import ResumenVentasTab from '@/components/tabs/ResumenVentasTab';
+import AnalisisProductosTab from '@/components/tabs/AnalisisProductosTab';
+import StockTab from '@/components/tabs/StockTab';
 
 export default function Dashboard() {
   // Estados para los datos
@@ -33,9 +37,11 @@ export default function Dashboard() {
   const [ventasPlataforma, setVentasPlataforma] = useState<VentasPorPlataforma[]>([]);
   const [margenSucursal, setMargenSucursal] = useState<MargenPorSucursal[]>([]);
   const [ventasCategoria, setVentasCategoria] = useState<VentasPorCategoria[]>([]);
+  const [ventasFiltradas, setVentasFiltradas] = useState<VentasFiltradas[]>([]);
   
   // Estados para opciones de filtros
   const [tiposDocumento, setTiposDocumento] = useState<TipoDocumento[]>([]);
+  const [plataformas, setPlataformas] = useState<Plataforma[]>([]);
   const [empresas, setEmpresas] = useState<string[]>([]);
   const [sucursales, setSucursales] = useState<string[]>([]);
   
@@ -51,21 +57,27 @@ export default function Dashboard() {
   const [dataLoading, setDataLoading] = useState(false);
   const [filtersInitialized, setFiltersInitialized] = useState(false);
 
+  // Estado para las pestañas
+  const [activeTab, setActiveTab] = useState('resumen-ventas');
+
   // Cargar opciones de filtros (solo una vez)
   useEffect(() => {
     const loadFilterOptions = async () => {
       try {
-        const [tiposDocResponse, empresasResponse, sucursalesResponse] = await Promise.all([
+        const [tiposDocResponse, plataformasResponse, empresasResponse, sucursalesResponse] = await Promise.all([
           fetch('/api/tipos-documento'),
+          fetch('/api/plataformas'),
           fetch('/api/empresas'),
           fetch('/api/sucursales')
         ]);
         
         const tipos = await tiposDocResponse.json();
+        const plataformasData = await plataformasResponse.json();
         const empresasData = await empresasResponse.json();
         const sucursalesData = await sucursalesResponse.json();
         
         setTiposDocumento(tipos);
+        setPlataformas(plataformasData);
         setEmpresas(empresasData);
         setSucursales(sucursalesData);
         
@@ -79,13 +91,16 @@ export default function Dashboard() {
         
         setFiltros({
           tipoDocumento: tiposSeleccionados,
+          plataforma: plataformasData.map((p: Plataforma) => p.plataforma),
           empresa: empresasData,
           sucursal: sucursalesData
         });
         
         setFiltersInitialized(true);
+        setLoading(false);
       } catch (error) {
         console.error('Error cargando opciones de filtros:', error);
+        setLoading(false);
       }
     };
 
@@ -152,6 +167,7 @@ export default function Dashboard() {
           setVentasPlataforma([]);
           setMargenSucursal([]);
           setVentasCategoria([]);
+          setVentasFiltradas([]);
           setResumen({
             total_registros: 0,
             total_documentos: 0,
@@ -165,73 +181,74 @@ export default function Dashboard() {
             porcentaje_margen_promedio: 0,
             porcentaje_sin_margen: 0
           });
-        } else {
-          const allFilters = getAllFilters();
-          const queryString = createUrlParams(allFilters);
-          
-          const [
-            ventasMenResponse, 
-            ventasSucResponse, 
-            topProdResponse, 
-            resumenResponse,
-            ventasPlataformaResponse,
-            margenSucursalResponse,
-            ventasCategoriaResponse
-          ] = await Promise.all([
-            fetch('/api/ventas-mensuales?' + queryString),
-            fetch('/api/ventas-sucursal?' + queryString),
-            fetch('/api/top-productos?' + queryString),
-            fetch('/api/resumen?' + queryString),
-            fetch('/api/ventas-plataforma?' + queryString),
-            fetch('/api/margen-sucursal?' + queryString),
-            fetch('/api/ventas-categoria?' + queryString + '&limit=50')
-          ]);
-
-          const ventasMenData = await ventasMenResponse.json();
-          const ventasSucData = await ventasSucResponse.json();
-          const topProdData = await topProdResponse.json();
-          const resumenData = await resumenResponse.json();
-          const ventasPlataformaData = await ventasPlataformaResponse.json();
-          const margenSucursalData = await margenSucursalResponse.json();
-          const ventasCategoriaData = await ventasCategoriaResponse.json();
-
-          setVentasMensuales(ventasMenData);
-          setVentasSucursal(ventasSucData);
-          setTopProductos(topProdData);
-          setResumen(resumenData);
-          setVentasPlataforma(ventasPlataformaData);
-          setMargenSucursal(margenSucursalData);
-          setVentasCategoria(ventasCategoriaData);
+          setDataLoading(false);
+          return;
         }
+
+        const allFilters = getAllFilters();
+        const params = createUrlParams(allFilters);
+
+        // Cargar todos los datos en paralelo
+        const [
+          ventasMensualesRes,
+          ventasSucursalRes,
+          topProductosRes,
+          resumenRes,
+          ventasPlataformaRes,
+          margenSucursalRes,
+          ventasCategoriaRes,
+          ventasFiltradasRes
+        ] = await Promise.all([
+          fetch(`/api/ventas-mensuales?${params}`),
+          fetch(`/api/ventas-sucursal?${params}`),
+          fetch(`/api/top-productos?${params}`),
+          fetch(`/api/resumen?${params}`),
+          fetch(`/api/ventas-plataforma?${params}`),
+          fetch(`/api/margen-sucursal?${params}`),
+          fetch(`/api/ventas-categoria?${params}`),
+          fetch(`/api/ventas-filtradas?${params}`)
+        ]);
+
+        const [
+          ventasMensualesData,
+          ventasSucursalData,
+          topProductosData,
+          resumenData,
+          ventasPlataformaData,
+          margenSucursalData,
+          ventasCategoriaData,
+          ventasFiltradasData
+        ] = await Promise.all([
+          ventasMensualesRes.json(),
+          ventasSucursalRes.json(),
+          topProductosRes.json(),
+          resumenRes.json(),
+          ventasPlataformaRes.json(),
+          margenSucursalRes.json(),
+          ventasCategoriaRes.json(),
+          ventasFiltradasRes.json()
+        ]);
+
+        setVentasMensuales(ventasMensualesData);
+        setVentasSucursal(ventasSucursalData);
+        setTopProductos(topProductosData);
+        setResumen(resumenData);
+        setVentasPlataforma(ventasPlataformaData);
+        setMargenSucursal(margenSucursalData);
+        setVentasCategoria(ventasCategoriaData);
+        setVentasFiltradas(ventasFiltradasData);
       } catch (error) {
         console.error('Error cargando datos:', error);
       } finally {
         setDataLoading(false);
-        setLoading(false);
       }
     };
 
     loadData();
-  }, [filtros, selectedYears, selectedMonths, filtersInitialized]);
+  }, [filtersInitialized, filtros, selectedYears, selectedMonths]);
 
   const handleFiltrosChange = (newFiltros: Filtros) => {
     setFiltros(newFiltros);
-  };
-
-  const handleDateFiltersChange = (years: number[], months: number[]) => {
-    setSelectedYears(years);
-    setSelectedMonths(months);
-  };
-
-  const handleClearDateFilters = () => {
-    setSelectedYears([]);
-    setSelectedMonths([]);
-  };
-
-  const handleClearAllFilters = () => {
-    setFiltros({});
-    setSelectedYears([]);
-    setSelectedMonths([]);
   };
 
   if (loading) {
@@ -279,126 +296,41 @@ export default function Dashboard() {
         </div>
       </header>
 
+      {/* Tabs pegadas al header */}
+      <TabNavigation activeTab={activeTab} onTabChange={setActiveTab} />
+
       {/* Main Content */}
       <main className="max-w-full mx-auto px-8 sm:px-12 lg:px-16 py-8">
-        {/* Panel de Filtros - Siempre visible */}
-        <FilterPanel
-          tiposDocumento={tiposDocumento}
-          empresas={empresas}
-          sucursales={sucursales}
-          filtros={filtros}
-          onFiltrosChange={handleFiltrosChange}
-        />
+        {/* Contenido de las Pestañas */}
+        {activeTab === 'resumen-ventas' && (
+          <ResumenVentasTab
+            ventasMensuales={ventasMensuales}
+            ventasSucursal={ventasSucursal}
+            ventasPlataforma={ventasPlataforma}
+            margenSucursal={margenSucursal}
+            ventasFiltradas={ventasFiltradas}
+            filtros={filtros}
+            onFiltrosChange={handleFiltrosChange}
+            dataLoading={dataLoading}
+            tiposDocumento={tiposDocumento}
+            plataformas={plataformas}
+            empresas={empresas}
+            sucursales={sucursales}
+            resumen={resumen}
+          />
+        )}
 
-        {/* Filtros de Fecha - Compacto */}
-        <DateFilterPanel
-          selectedYears={selectedYears}
-          selectedMonths={selectedMonths}
-          onYearsChange={setSelectedYears}
-          onMonthsChange={setSelectedMonths}
-          onClearAll={handleClearDateFilters}
-        />
+        {activeTab === 'analisis-productos' && (
+          <AnalisisProductosTab
+            topProductos={topProductos}
+            ventasCategoria={ventasCategoria}
+            dataLoading={dataLoading}
+          />
+        )}
 
-        {/* Resumen Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          {resumen && <ResumenCards resumen={resumen} />}
-        </div>
-
-        {/* Charts Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-          {/* Ventas Mensuales Comparativas */}
-          <div className="bg-white p-6 rounded-lg shadow-sm border">
-            <div className="flex items-center mb-4">
-              <TrendingUp className="h-6 w-6 text-blue-600 mr-2" />
-              <h2 className="text-xl font-semibold text-gray-900">
-                Ventas Mensuales Comparativas
-              </h2>
-            </div>
-            {dataLoading ? (
-              <div className="animate-pulse bg-gray-200 h-64 rounded"></div>
-            ) : (
-              <VentasMensualesChart data={ventasMensuales} />
-            )}
-          </div>
-
-          {/* Ventas por Sucursal */}
-          <div className="bg-white p-6 rounded-lg shadow-sm border">
-            <div className="flex items-center mb-4">
-              <Store className="h-6 w-6 text-green-600 mr-2" />
-              <h2 className="text-xl font-semibold text-gray-900">
-                Ventas por Sucursal
-              </h2>
-            </div>
-            {dataLoading ? (
-              <div className="animate-pulse bg-gray-200 h-64 rounded"></div>
-            ) : (
-              <VentasSucursalChart data={ventasSucursal} />
-            )}
-          </div>
-        </div>
-
-        {/* Top Productos Table */}
-        <div className="bg-white p-6 rounded-lg shadow-sm border mb-8">
-          <div className="flex items-center mb-4">
-            <Package className="h-6 w-6 text-purple-600 mr-2" />
-            <h2 className="text-xl font-semibold text-gray-900">
-              Top 10 Productos Más Vendidos
-            </h2>
-          </div>
-          {dataLoading ? (
-            <div className="animate-pulse bg-gray-200 h-64 rounded"></div>
-          ) : (
-            <TopProductosTable data={topProductos} />
-          )}
-        </div>
-
-        {/* Nueva sección: Ventas por Plataforma y Margen por Sucursal */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-          {/* Ventas por Plataforma */}
-          <div className="bg-white p-6 rounded-lg shadow-sm border">
-            <div className="flex items-center mb-4">
-              <Layers className="h-6 w-6 text-orange-600 mr-2" />
-              <h2 className="text-xl font-semibold text-gray-900">
-                Ventas por Plataforma
-              </h2>
-            </div>
-            {dataLoading ? (
-              <div className="animate-pulse bg-gray-200 h-64 rounded"></div>
-            ) : (
-              <VentasPlataformaChart data={ventasPlataforma} />
-            )}
-          </div>
-
-          {/* Margen por Sucursal */}
-          <div className="bg-white p-6 rounded-lg shadow-sm border">
-            <div className="flex items-center mb-4">
-              <DollarSign className="h-6 w-6 text-emerald-600 mr-2" />
-              <h2 className="text-xl font-semibold text-gray-900">
-                Margen por Sucursal
-              </h2>
-            </div>
-            {dataLoading ? (
-              <div className="animate-pulse bg-gray-200 h-64 rounded"></div>
-            ) : (
-              <MargenSucursalChart data={margenSucursal} />
-            )}
-          </div>
-        </div>
-
-        {/* Ventas por Categoría/Productos */}
-        <div className="bg-white p-6 rounded-lg shadow-sm border">
-          <div className="flex items-center mb-4">
-            <Target className="h-6 w-6 text-indigo-600 mr-2" />
-            <h2 className="text-xl font-semibold text-gray-900">
-              Ventas por Categoría/Productos y Variantes
-            </h2>
-          </div>
-          {dataLoading ? (
-            <div className="animate-pulse bg-gray-200 h-64 rounded"></div>
-          ) : (
-            <VentasCategoriaTable data={ventasCategoria} />
-          )}
-        </div>
+        {activeTab === 'stock' && (
+          <StockTab dataLoading={dataLoading} />
+        )}
       </main>
     </div>
   );

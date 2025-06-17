@@ -44,8 +44,85 @@ const formatCurrencyTable = (value: number): string => {
   return `$${value.toLocaleString('es-CL')}`;
 };
 
+// Leyenda personalizada para plataformas
+const CustomLegend = (props: any) => {
+  const { payload } = props;
+  return (
+    <ul className="flex flex-wrap gap-4 justify-center mt-4">
+      {payload.map((entry: any, index: number) => (
+        <li key={`item-${index}`} className="flex items-center space-x-2">
+          <span
+            className="inline-block w-4 h-4 rounded"
+            style={{ backgroundColor: entry.color }}
+          ></span>
+          <span className="text-sm text-gray-700 font-medium">
+            {entry.value}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+};
+
+// Etiqueta personalizada para el PieChart (monto MM$ y cantidad de documentos)
+const renderCustomPieLabel = (props: any) => {
+  const { cx, cy, midAngle, innerRadius, outerRadius, percent, index, payload } = props;
+  if (percent < 0.05) return null;
+  const RADIAN = Math.PI / 180;
+  const radius = innerRadius + (outerRadius - innerRadius) * 0.7;
+  const x = cx + radius * Math.cos(-midAngle * RADIAN);
+  const y = cy + radius * Math.sin(-midAngle * RADIAN);
+  // Monto en millones
+  const millones = payload.total_ventas / 1_000_000;
+  // Cantidad de documentos
+  const docs = payload.total_documentos;
+  return (
+    <g>
+      <text x={x} y={y - 6} textAnchor="middle" dominantBaseline="central" fontSize="11" fontWeight="bold" fill="#fff" style={{ textShadow: '0 1px 2px #0008' }}>
+        {`$${millones.toFixed(1)}M`}
+      </text>
+      <text x={x} y={y + 8} textAnchor="middle" dominantBaseline="central" fontSize="9" fill="#fff" style={{ textShadow: '0 1px 2px #0008' }}>
+        {`(${docs.toLocaleString('es-CL')} doc)`}
+      </text>
+    </g>
+  );
+};
+
+// Normaliza y agrupa las plataformas Uber
+function groupUber(data: VentasPorPlataforma[]): VentasPorPlataforma[] {
+  const result: Record<string, VentasPorPlataforma> = {};
+  const isUber = (name: string) => name.trim().toLowerCase() === 'uber';
+
+  for (const item of data) {
+    const key = isUber(item.plataforma) ? 'UBER' : item.plataforma;
+    if (!result[key]) {
+      result[key] = { ...item, plataforma: key };
+    } else {
+      // Sumar los valores
+      result[key].total_ventas += item.total_ventas;
+      result[key].total_unidades += item.total_unidades;
+      result[key].total_documentos += item.total_documentos;
+      result[key].margen_total += item.margen_total;
+      // Recalcular porcentaje del total y margen después
+    }
+  }
+
+  // Recalcular porcentajes
+  const totalVentas = Object.values(result).reduce((sum, item) => sum + item.total_ventas, 0);
+  for (const item of Object.values(result)) {
+    item.porcentaje_del_total = totalVentas > 0 ? +(item.total_ventas / totalVentas * 100).toFixed(2) : 0;
+    item.porcentaje_margen = item.total_ventas > 0 ? +(item.margen_total / item.total_ventas * 100).toFixed(2) : 0;
+  }
+
+  return Object.values(result);
+}
+
 export default function VentasPlataformaChart({ data }: VentasPlataformaChartProps) {
-  const [showTable, setShowTable] = useState(false);
+  // Vista por defecto: Torta
+  const [view, setView] = useState<'pie' | 'bar' | 'table'>('pie');
+
+  // Agrupar Uber
+  const groupedData = groupUber(data);
 
   // Tooltip personalizado
   const CustomTooltip = ({ active, payload, label }: any) => {
@@ -105,7 +182,7 @@ export default function VentasPlataformaChart({ data }: VentasPlataformaChartPro
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-200">
-          {data.map((item, index) => (
+          {groupedData.map((item, index) => (
             <tr key={index} className="hover:bg-gray-50">
               <td className="px-4 py-2 text-sm font-medium text-gray-900 border-b">
                 {item.plataforma}
@@ -140,105 +217,89 @@ export default function VentasPlataformaChart({ data }: VentasPlataformaChartPro
 
   return (
     <div className="space-y-4">
-      {/* Controles */}
-      <div className="flex justify-between items-center">
-        <div className="text-sm text-gray-600">
-          {data.length} plataformas • Total: {formatCurrency(data.reduce((sum, item) => sum + item.total_ventas, 0))}
-        </div>
-        <div className="flex space-x-2">
+      {/* Selector de vista tipo tabs (igual a otros gráficos) */}
+      <div className="flex justify-end mb-2">
+        <div className="inline-flex rounded-md shadow-sm border border-gray-200 bg-gray-50">
           <button
-            onClick={() => setShowTable(false)}
-            className={`flex items-center space-x-1 px-3 py-1 rounded-md text-sm font-medium transition-colors ${
-              !showTable 
-                ? 'bg-blue-100 text-blue-700' 
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-            }`}
-          >
-            <BarChart3 className="h-4 w-4" />
-            <span>Gráfico</span>
-          </button>
+            onClick={() => setView('bar')}
+            className={`px-4 py-1 text-sm font-medium rounded-l-md focus:outline-none transition-colors ${view === 'bar' ? 'bg-blue-600 text-white' : 'text-gray-700 hover:bg-blue-50'}`}
+          >Barras</button>
           <button
-            onClick={() => setShowTable(true)}
-            className={`flex items-center space-x-1 px-3 py-1 rounded-md text-sm font-medium transition-colors ${
-              showTable 
-                ? 'bg-blue-100 text-blue-700' 
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-            }`}
-          >
-            <TableIcon className="h-4 w-4" />
-            <span>Tabla</span>
-          </button>
+            onClick={() => setView('pie')}
+            className={`px-4 py-1 text-sm font-medium focus:outline-none transition-colors border-l border-r border-gray-200 ${view === 'pie' ? 'bg-blue-600 text-white' : 'text-gray-700 hover:bg-blue-50'}`}
+          >Torta</button>
+          <button
+            onClick={() => setView('table')}
+            className={`px-4 py-1 text-sm font-medium rounded-r-md focus:outline-none transition-colors ${view === 'table' ? 'bg-blue-600 text-white' : 'text-gray-700 hover:bg-blue-50'}`}
+          >Tabla</button>
         </div>
       </div>
 
-      {/* Contenido */}
-      {showTable ? (
-        <TableView />
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Gráfico de Barras - Ventas */}
-          <div className="h-80">
-            <h4 className="text-sm font-medium text-gray-700 mb-2">Ventas por Plataforma</h4>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={data} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis 
-                  dataKey="plataforma" 
-                  stroke="#6b7280"
-                  fontSize={11}
-                  angle={-45}
-                  textAnchor="end"
-                  height={80}
-                />
-                <YAxis 
-                  stroke="#6b7280"
-                  fontSize={11}
-                  tickFormatter={formatCurrencyTable}
-                />
-                <Tooltip content={<CustomTooltip />} />
-                <Bar 
-                  dataKey="total_ventas"
-                  name="Ventas Netas" 
-                  fill="#3b82f6" 
-                  radius={[2, 2, 0, 0]}
-                />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-
-          {/* Gráfico de Pie - Participación */}
-          <div className="h-80">
-            <h4 className="text-sm font-medium text-gray-700 mb-2">Participación por Plataforma</h4>
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={data}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={({ plataforma, porcentaje_del_total }) => 
-                    `${plataforma}: ${porcentaje_del_total}%`
-                  }
-                  outerRadius={100}
-                  fill="#8884d8"
-                  dataKey="total_ventas"
-                >
-                  {data.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip 
-                  formatter={(value: number, name: string, props: any) => [
-                    formatCurrency(value),
-                    `Ventas - ${props.payload.plataforma}`
-                  ]}
-                />
-                <Legend />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
+      {/* Contenido de la vista seleccionada */}
+      {view === 'bar' && (
+        <div className="w-full h-96 overflow-x-auto">
+          <h4 className="text-sm font-medium text-gray-700 mb-2">Ventas por Plataforma (Barras)</h4>
+          <ResponsiveContainer width={groupedData.length > 8 ? groupedData.length * 60 : '100%'} height="100%" minWidth={500}>
+            <BarChart data={groupedData} margin={{ top: 20, right: 30, left: 20, bottom: 50 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis 
+                dataKey="plataforma" 
+                stroke="#6b7280"
+                fontSize={11}
+                angle={-45}
+                textAnchor="end"
+                height={80}
+              />
+              <YAxis 
+                stroke="#6b7280"
+                fontSize={11}
+                tickFormatter={formatCurrencyTable}
+              />
+              <Tooltip content={<CustomTooltip />} />
+              <Bar 
+                dataKey="total_ventas"
+                name="Ventas Netas" 
+                fill="#3b82f6" 
+                radius={[2, 2, 0, 0]}
+              />
+            </BarChart>
+          </ResponsiveContainer>
         </div>
       )}
+
+      {view === 'pie' && (
+        <div className="w-full h-96">
+          <h4 className="text-sm font-medium text-gray-700 mb-2">Participación por Plataforma (Torta)</h4>
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie
+                data={groupedData}
+                cx="50%"
+                cy="50%"
+                labelLine={false}
+                label={renderCustomPieLabel}
+                outerRadius={110}
+                fill="#8884d8"
+                dataKey="total_ventas"
+                nameKey="plataforma"
+              >
+                {groupedData.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                ))}
+              </Pie>
+              <Tooltip 
+                formatter={(value: number, name: string, props: any) => [
+                  formatCurrency(value),
+                  `Ventas - ${props.payload.plataforma}`
+                ]}
+              />
+              <Legend content={<CustomLegend />} />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {view === 'table' && <TableView />}
     </div>
   );
 } 

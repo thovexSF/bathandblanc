@@ -18,6 +18,22 @@ interface ResumenCardsProps {
 }
 
 export default function ResumenCards({ resumen }: ResumenCardsProps) {
+  if (!resumen) {
+    resumen = {
+      total_registros: 0,
+      total_documentos: 0,
+      productos_diferentes: 0,
+      sucursales_activas: 0,
+      ventas_totales: 0,
+      ventas_con_costo: 0,
+      margen_total: 0,
+      porcentaje_margen_promedio: 0,
+      registros_con_margen: 0,
+      registros_sin_margen: 0,
+      porcentaje_sin_margen: 0,
+    };
+  }
+
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('es-CL', {
       style: 'currency',

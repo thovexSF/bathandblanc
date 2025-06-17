@@ -12,6 +12,8 @@ export interface VentasMensuales {
 export interface VentasPorSucursal {
   sucursal: string;
   empresa: string;
+  tipo_documento: string;
+  plataforma: string;
   total_ventas: number;
   total_documentos: number;
   ticket_promedio: number;
@@ -39,11 +41,8 @@ export interface MargenPorSucursal {
   sucursal: string;
   empresa: string;
   total_ventas: number;
-  total_margen: number;
+  margen_total: number;
   porcentaje_margen: number;
-  ventas_con_costo: number;
-  ventas_sin_costo: number;
-  porcentaje_sin_costo: number;
 }
 
 export interface VentasPorCategoria {
@@ -73,12 +72,67 @@ export interface TipoDocumento {
   total_documentos: number;
 }
 
+export interface Plataforma {
+  plataforma: string;
+  total_documentos: number;
+}
+
 export interface Filtros {
   tipoDocumento?: string[];
   empresa?: string[];
   sucursal?: string[];
+  plataforma?: string[];
   años?: number[];
   meses?: number[];
+  dias?: number[];
+  fechaInicio?: string;
+  fechaFin?: string;
+}
+
+export interface StockPorSucursal {
+  sucursal: string;
+  empresa: string;
+  total_productos: number;
+  stock_disponible: number;
+  valor_stock: number;
+  productos_stock_bajo: number;
+  rotacion_promedio: number;
+}
+
+export interface StockBajo {
+  sku: string;
+  producto_servicio: string;
+  variante: string;
+  sucursal: string;
+  stock_disponible: number;
+  stock_minimo: number;
+  dias_sin_stock: number;
+  ventas_ultimos_30_dias: number;
+}
+
+export interface RotacionProductos {
+  sku: string;
+  producto_servicio: string;
+  sucursal: string;
+  stock_promedio: number;
+  ventas_promedio_diarias: number;
+  dias_rotacion: number;
+  categoria_rotacion: string;
+}
+
+export interface ResumenStock {
+  total_productos: number;
+  valor_total_stock: number;
+  productos_stock_bajo: number;
+  productos_sin_stock: number;
+  rotacion_promedio: number;
+}
+
+export interface VentasFiltradas {
+  categoria: string;
+  total_ventas: number;
+  total_documentos: number;
+  ticket_promedio: number;
 }
 
 // Helper function para convertir PostgreSQL bigints a números
@@ -179,6 +233,12 @@ function buildWhereClause(filtros: Filtros): { whereClause: string; params: any[
     params.push(...filtros.sucursal);
   }
 
+  if (filtros.plataforma && filtros.plataforma.length > 0) {
+    const placeholders = filtros.plataforma.map(() => `$${paramIndex++}`).join(', ');
+    conditions.push(`plataforma IN (${placeholders})`);
+    params.push(...filtros.plataforma);
+  }
+
   if (filtros.años && filtros.años.length > 0) {
     const placeholders = filtros.años.map(() => `$${paramIndex++}`).join(', ');
     conditions.push(`EXTRACT(YEAR FROM fecha) IN (${placeholders})`);
@@ -191,6 +251,12 @@ function buildWhereClause(filtros: Filtros): { whereClause: string; params: any[
     params.push(...filtros.meses);
   }
 
+  if (filtros.dias && filtros.dias.length > 0) {
+    const placeholders = filtros.dias.map(() => `$${paramIndex++}`).join(', ');
+    conditions.push(`EXTRACT(DAY FROM fecha) IN (${placeholders})`);
+    params.push(...filtros.dias);
+  }
+
   return {
     whereClause: conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
     params
@@ -198,26 +264,49 @@ function buildWhereClause(filtros: Filtros): { whereClause: string; params: any[
 }
 
 // Ventas mensuales comparativas (2024 vs 2025) con filtros
-export async function getVentasMensuales(filtros: Filtros = {}): Promise<VentasMensuales[]> {
+export async function getVentasMensuales(filtros: Filtros = {}, viewMode: 'mensual' | 'diaria' | 'anual' = 'mensual'): Promise<any[]> {
   const { whereClause, params } = buildWhereClause(filtros);
   
+  // Agregar filtros de fecha si existen
+  let fechaWhereClause = '';
+  if (filtros.fechaInicio || filtros.fechaFin) {
+    fechaWhereClause = ' AND ';
+    if (filtros.fechaInicio) {
+      fechaWhereClause += `fecha >= '${filtros.fechaInicio}'`;
+    }
+    if (filtros.fechaInicio && filtros.fechaFin) {
+      fechaWhereClause += ' AND ';
+    }
+    if (filtros.fechaFin) {
+      fechaWhereClause += `fecha <= '${filtros.fechaFin}'`;
+    }
+  }
+
+  let groupBy = '';
+  let select = '';
+  let orderBy = '';
+  let label = '';
+  if (viewMode === 'diaria') {
+    select = `EXTRACT(DAY FROM fecha) as dia, TO_CHAR(fecha, 'DD') as dia_nombre`;
+    groupBy = 'EXTRACT(DAY FROM fecha), TO_CHAR(fecha, \'DD\')';
+    orderBy = 'EXTRACT(DAY FROM fecha)';
+    label = 'dia';
+  } else if (viewMode === 'anual') {
+    select = `EXTRACT(YEAR FROM fecha) as año, TO_CHAR(fecha, 'YYYY') as año_nombre`;
+    groupBy = 'EXTRACT(YEAR FROM fecha), TO_CHAR(fecha, \'YYYY\')';
+    orderBy = 'EXTRACT(YEAR FROM fecha)';
+    label = 'año';
+  } else {
+    select = `EXTRACT(MONTH FROM fecha) as mes, CASE EXTRACT(MONTH FROM fecha)
+      WHEN 1 THEN 'Enero' WHEN 2 THEN 'Febrero' WHEN 3 THEN 'Marzo' WHEN 4 THEN 'Abril' WHEN 5 THEN 'Mayo' WHEN 6 THEN 'Junio' WHEN 7 THEN 'Julio' WHEN 8 THEN 'Agosto' WHEN 9 THEN 'Septiembre' WHEN 10 THEN 'Octubre' WHEN 11 THEN 'Noviembre' WHEN 12 THEN 'Diciembre' END as mes_nombre`;
+    groupBy = 'EXTRACT(MONTH FROM fecha)';
+    orderBy = 'EXTRACT(MONTH FROM fecha)';
+    label = 'mes';
+  }
+
   const query = `
     SELECT 
-      EXTRACT(MONTH FROM fecha) as mes,
-      CASE EXTRACT(MONTH FROM fecha)
-        WHEN 1 THEN 'Enero'
-        WHEN 2 THEN 'Febrero'
-        WHEN 3 THEN 'Marzo'
-        WHEN 4 THEN 'Abril'
-        WHEN 5 THEN 'Mayo'
-        WHEN 6 THEN 'Junio'
-        WHEN 7 THEN 'Julio'
-        WHEN 8 THEN 'Agosto'
-        WHEN 9 THEN 'Septiembre'
-        WHEN 10 THEN 'Octubre'
-        WHEN 11 THEN 'Noviembre'
-        WHEN 12 THEN 'Diciembre'
-      END as mes_nombre,
+      ${select},
       COALESCE(SUM(CASE WHEN EXTRACT(YEAR FROM fecha) = 2024 THEN subtotal_neto ELSE 0 END), 0) as ventas_2024,
       COALESCE(SUM(CASE WHEN EXTRACT(YEAR FROM fecha) = 2025 THEN subtotal_neto ELSE 0 END), 0) as ventas_2025,
       COALESCE(SUM(CASE WHEN EXTRACT(YEAR FROM fecha) = 2025 THEN subtotal_neto ELSE 0 END), 0) - 
@@ -230,12 +319,11 @@ export async function getVentasMensuales(filtros: Filtros = {}): Promise<VentasM
         ELSE 0 
       END as crecimiento_porcentual
     FROM ventas 
-    ${whereClause}
-    GROUP BY EXTRACT(MONTH FROM fecha)
+    ${whereClause}${fechaWhereClause}
+    GROUP BY ${groupBy}
     HAVING SUM(subtotal_neto) > 0
-    ORDER BY EXTRACT(MONTH FROM fecha);
+    ORDER BY ${orderBy};
   `;
-  
   const result = await pool.query(query, params);
   return processResults(result.rows);
 }
@@ -248,6 +336,8 @@ export async function getVentasPorSucursal(filtros: Filtros = {}): Promise<Venta
     SELECT 
       sucursal,
       empresa,
+      tipo_documento,
+      plataforma,
       ROUND(SUM(subtotal_neto))::numeric as total_ventas,
       COUNT(DISTINCT nro_documento)::numeric as total_documentos,
       CASE 
@@ -257,7 +347,7 @@ export async function getVentasPorSucursal(filtros: Filtros = {}): Promise<Venta
       END as ticket_promedio
     FROM ventas 
     ${whereClause}
-    GROUP BY sucursal, empresa
+    GROUP BY sucursal, empresa, tipo_documento, plataforma
     ORDER BY total_ventas DESC;
   `;
   
@@ -375,24 +465,17 @@ export async function getMargenPorSucursal(filtros: Filtros = {}): Promise<Marge
       sucursal,
       empresa,
       ROUND(SUM(subtotal_neto))::numeric as total_ventas,
-      ROUND(SUM(CASE WHEN margen_neto IS NOT NULL THEN margen_neto ELSE 0 END))::numeric as total_margen,
+      ROUND(SUM(CASE WHEN margen_neto IS NOT NULL THEN margen_neto ELSE 0 END))::numeric as margen_total,
       CASE 
         WHEN SUM(CASE WHEN margen_neto IS NOT NULL THEN subtotal_neto ELSE 0 END) > 0 
         THEN ROUND((SUM(CASE WHEN margen_neto IS NOT NULL THEN margen_neto ELSE 0 END) / 
                     SUM(CASE WHEN margen_neto IS NOT NULL THEN subtotal_neto ELSE 0 END)) * 100, 2)
         ELSE 0 
-      END as porcentaje_margen,
-      ROUND(SUM(CASE WHEN margen_neto IS NOT NULL THEN subtotal_neto ELSE 0 END))::numeric as ventas_con_costo,
-      ROUND(SUM(CASE WHEN margen_neto IS NULL THEN subtotal_neto ELSE 0 END))::numeric as ventas_sin_costo,
-      CASE 
-        WHEN SUM(subtotal_neto) > 0 
-        THEN ROUND((SUM(CASE WHEN margen_neto IS NULL THEN subtotal_neto ELSE 0 END) / SUM(subtotal_neto)) * 100, 2)
-        ELSE 0 
-      END as porcentaje_sin_costo
+      END as porcentaje_margen
     FROM ventas 
     ${whereClause}
     GROUP BY sucursal, empresa
-    ORDER BY total_ventas DESC;
+    ORDER BY margen_total DESC;
   `;
   
   const result = await pool.query(query, params);
@@ -461,4 +544,229 @@ export async function getCategorias(): Promise<string[]> {
   
   const result = await pool.query(query);
   return result.rows.map(row => row.tipo_producto_servicio);
+}
+
+// Márgenes comparativos por sucursal (2024 vs 2025)
+export interface MargenSucursalComparativo {
+  sucursal: string;
+  empresa: string;
+  margen_2024: number;
+  margen_2025: number;
+  variacion_porcentual: number;
+}
+
+export async function getMargenPorSucursalComparativo(filtros: Filtros = {}): Promise<MargenSucursalComparativo[]> {
+  const { whereClause, params } = buildWhereClause(filtros);
+  const query = `
+    SELECT 
+      sucursal,
+      empresa,
+      -- % margen 2024
+      CASE WHEN SUM(CASE WHEN EXTRACT(YEAR FROM fecha) = 2024 THEN subtotal_neto ELSE 0 END) > 0
+        THEN ROUND((SUM(CASE WHEN EXTRACT(YEAR FROM fecha) = 2024 THEN margen_neto ELSE 0 END) / SUM(CASE WHEN EXTRACT(YEAR FROM fecha) = 2024 THEN subtotal_neto ELSE 0 END)) * 100, 2)
+        ELSE 0 END as margen_2024,
+      -- % margen 2025
+      CASE WHEN SUM(CASE WHEN EXTRACT(YEAR FROM fecha) = 2025 THEN subtotal_neto ELSE 0 END) > 0
+        THEN ROUND((SUM(CASE WHEN EXTRACT(YEAR FROM fecha) = 2025 THEN margen_neto ELSE 0 END) / SUM(CASE WHEN EXTRACT(YEAR FROM fecha) = 2025 THEN subtotal_neto ELSE 0 END)) * 100, 2)
+        ELSE 0 END as margen_2025
+    FROM ventas
+    ${whereClause}
+    GROUP BY sucursal, empresa
+    ORDER BY sucursal, empresa;
+  `;
+  const result = await pool.query(query, params);
+  // Calcular variación en JS
+  return result.rows.map((row: any) => ({
+    sucursal: row.sucursal,
+    empresa: row.empresa,
+    margen_2024: toNumber(row.margen_2024),
+    margen_2025: toNumber(row.margen_2025),
+    variacion_porcentual: toNumber(row.margen_2025) - toNumber(row.margen_2024)
+  }));
+}
+
+// Stock por sucursal
+export async function getStockPorSucursal(filtros: Filtros = {}): Promise<StockPorSucursal[]> {
+  const query = `
+    WITH stock_actual AS (
+      SELECT DISTINCT ON (sucursal, sku) 
+        sucursal, empresa, sku, producto_servicio, stock_disponible, valor_total_stock
+      FROM stock_historico 
+      ORDER BY sucursal, sku, fecha DESC
+    ),
+    ventas_recientes AS (
+      SELECT 
+        sucursal, sku,
+        COALESCE(SUM(cantidad), 0) as ventas_30_dias
+      FROM ventas 
+      WHERE fecha >= CURRENT_DATE - INTERVAL '30 days'
+      GROUP BY sucursal, sku
+    )
+    SELECT 
+      s.sucursal,
+      s.empresa,
+      COUNT(s.sku)::numeric as total_productos,
+      ROUND(SUM(s.stock_disponible))::numeric as stock_disponible,
+      ROUND(SUM(s.valor_total_stock))::numeric as valor_stock,
+      COUNT(CASE WHEN s.stock_disponible <= 5 THEN 1 END)::numeric as productos_stock_bajo,
+      CASE 
+        WHEN AVG(CASE WHEN v.ventas_30_dias > 0 THEN s.stock_disponible / (v.ventas_30_dias / 30.0) END) IS NOT NULL
+        THEN ROUND(AVG(CASE WHEN v.ventas_30_dias > 0 THEN s.stock_disponible / (v.ventas_30_dias / 30.0) END), 1)
+        ELSE 0 
+      END as rotacion_promedio
+    FROM stock_actual s
+    LEFT JOIN ventas_recientes v ON s.sucursal = v.sucursal AND s.sku = v.sku
+    GROUP BY s.sucursal, s.empresa
+    ORDER BY valor_stock DESC;
+  `;
+  
+  const result = await pool.query(query);
+  return processResults(result.rows);
+}
+
+// Productos con stock bajo
+export async function getStockBajo(limite: number = 20): Promise<StockBajo[]> {
+  const query = `
+    WITH stock_actual AS (
+      SELECT DISTINCT ON (sucursal, sku) 
+        sucursal, sku, producto_servicio, variante, stock_disponible
+      FROM stock_historico 
+      ORDER BY sucursal, sku, fecha DESC
+    ),
+    ventas_recientes AS (
+      SELECT 
+        sucursal, sku,
+        COALESCE(SUM(cantidad), 0) as ventas_30_dias
+      FROM ventas 
+      WHERE fecha >= CURRENT_DATE - INTERVAL '30 days'
+      GROUP BY sucursal, sku
+    )
+    SELECT 
+      s.sku,
+      s.producto_servicio,
+      s.variante,
+      s.sucursal,
+      s.stock_disponible::numeric,
+      5::numeric as stock_minimo,
+      CASE 
+        WHEN s.stock_disponible <= 0 THEN 999
+        WHEN v.ventas_30_dias > 0 THEN ROUND(s.stock_disponible / (v.ventas_30_dias / 30.0))
+        ELSE 0 
+      END::numeric as dias_sin_stock,
+      COALESCE(v.ventas_30_dias, 0)::numeric as ventas_ultimos_30_dias
+    FROM stock_actual s
+    LEFT JOIN ventas_recientes v ON s.sucursal = v.sucursal AND s.sku = v.sku
+    WHERE s.stock_disponible <= 10
+    ORDER BY s.stock_disponible ASC, v.ventas_30_dias DESC
+    LIMIT $1;
+  `;
+  
+  const result = await pool.query(query, [limite]);
+  return processResults(result.rows);
+}
+
+// Análisis de rotación de productos
+export async function getRotacionProductos(limite: number = 20): Promise<RotacionProductos[]> {
+  const query = `
+    WITH stock_actual AS (
+      SELECT DISTINCT ON (sucursal, sku) 
+        sucursal, sku, producto_servicio, stock_disponible
+      FROM stock_historico 
+      ORDER BY sucursal, sku, fecha DESC
+    ),
+    ventas_recientes AS (
+      SELECT 
+        sucursal, sku,
+        COALESCE(SUM(cantidad), 0) as ventas_30_dias,
+        COALESCE(SUM(cantidad) / 30.0, 0) as ventas_diarias_promedio
+      FROM ventas 
+      WHERE fecha >= CURRENT_DATE - INTERVAL '30 days'
+      GROUP BY sucursal, sku
+    )
+    SELECT 
+      s.sku,
+      s.producto_servicio,
+      s.sucursal,
+      s.stock_disponible::numeric as stock_promedio,
+      ROUND(v.ventas_diarias_promedio, 2)::numeric as ventas_promedio_diarias,
+      CASE 
+        WHEN v.ventas_diarias_promedio > 0 
+        THEN ROUND(s.stock_disponible / v.ventas_diarias_promedio, 1)
+        ELSE 999 
+      END::numeric as dias_rotacion,
+      CASE 
+        WHEN v.ventas_diarias_promedio = 0 THEN 'Sin Ventas'
+        WHEN s.stock_disponible / NULLIF(v.ventas_diarias_promedio, 0) <= 7 THEN 'Rápida'
+        WHEN s.stock_disponible / NULLIF(v.ventas_diarias_promedio, 0) <= 30 THEN 'Normal'
+        WHEN s.stock_disponible / NULLIF(v.ventas_diarias_promedio, 0) <= 90 THEN 'Lenta'
+        ELSE 'Muy Lenta'
+      END as categoria_rotacion
+    FROM stock_actual s
+    LEFT JOIN ventas_recientes v ON s.sucursal = v.sucursal AND s.sku = v.sku
+    WHERE s.stock_disponible > 0
+    ORDER BY dias_rotacion ASC
+    LIMIT $1;
+  `;
+  
+  const result = await pool.query(query, [limite]);
+  return processResults(result.rows);
+}
+
+// Resumen general de stock
+export async function getResumenStock(): Promise<ResumenStock> {
+  const query = `
+    WITH stock_actual AS (
+      SELECT DISTINCT ON (sucursal, sku) 
+        sucursal, sku, stock_disponible, valor_total_stock
+      FROM stock_historico 
+      ORDER BY sucursal, sku, fecha DESC
+    ),
+    ventas_recientes AS (
+      SELECT 
+        sucursal, sku,
+        COALESCE(SUM(cantidad) / 30.0, 0) as ventas_diarias_promedio
+      FROM ventas 
+      WHERE fecha >= CURRENT_DATE - INTERVAL '30 days'
+      GROUP BY sucursal, sku
+    )
+    SELECT 
+      COUNT(*)::numeric as total_productos,
+      ROUND(SUM(valor_total_stock))::numeric as valor_total_stock,
+      COUNT(CASE WHEN stock_disponible <= 5 THEN 1 END)::numeric as productos_stock_bajo,
+      COUNT(CASE WHEN stock_disponible <= 0 THEN 1 END)::numeric as productos_sin_stock,
+      ROUND(AVG(CASE 
+        WHEN v.ventas_diarias_promedio > 0 
+        THEN s.stock_disponible / v.ventas_diarias_promedio 
+        ELSE NULL 
+      END), 1)::numeric as rotacion_promedio
+    FROM stock_actual s
+    LEFT JOIN ventas_recientes v ON s.sucursal = v.sucursal AND s.sku = v.sku;
+  `;
+  
+  const result = await pool.query(query);
+  return processResults(result.rows)[0];
+}
+
+// Ventas filtradas
+export async function getVentasFiltradas(filtros: Filtros = {}): Promise<VentasFiltradas[]> {
+  const { whereClause, params } = buildWhereClause(filtros);
+  
+  const query = `
+    SELECT 
+      COALESCE(tipo_producto_servicio, 'Sin Categoría') as categoria,
+      ROUND(SUM(subtotal_neto))::numeric as total_ventas,
+      COUNT(DISTINCT nro_documento)::numeric as total_documentos,
+      CASE 
+        WHEN COUNT(DISTINCT nro_documento) > 0 
+        THEN ROUND(SUM(subtotal_neto) / COUNT(DISTINCT nro_documento))::numeric
+        ELSE 0 
+      END as ticket_promedio
+    FROM ventas 
+    ${whereClause}
+    GROUP BY COALESCE(tipo_producto_servicio, 'Sin Categoría')
+    ORDER BY total_ventas DESC;
+  `;
+  
+  const result = await pool.query(query, params);
+  return processResults(result.rows);
 } 
