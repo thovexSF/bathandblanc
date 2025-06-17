@@ -199,10 +199,11 @@ export default function VentasSucursalChart({
   };
 
   const handleDayToggle = (day: number) => {
-    const newDays = selectedDays.includes(day)
-      ? selectedDays.filter(d => d !== day)
-      : [...selectedDays, day];
-    setSelectedDays(newDays);
+    if (!selectedDays.includes(day)) {
+      setSelectedDays(Array.from({ length: day }, (_, i) => i + 1));
+    } else {
+      setSelectedDays(selectedDays.filter(d => d < day));
+    }
   };
 
   const handleSelectAllYears = () => {

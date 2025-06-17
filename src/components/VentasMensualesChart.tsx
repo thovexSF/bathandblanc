@@ -451,7 +451,13 @@ export default function VentasMensualesChart({ data: initialData, tiposDocumento
                   <input
                     type="checkbox"
                     checked={selectedDays.includes(day)}
-                    onChange={() => setSelectedDays(selectedDays.includes(day) ? selectedDays.filter(d => d !== day) : [...selectedDays, day])}
+                    onChange={() => {
+                      if (!selectedDays.includes(day)) {
+                        setSelectedDays(Array.from({ length: day }, (_, i) => i + 1));
+                      } else {
+                        setSelectedDays(selectedDays.filter(d => d < day));
+                      }
+                    }}
                     className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 w-3 h-3"
                   />
                   <span className="text-xs text-gray-700">{day}</span>

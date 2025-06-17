@@ -22,7 +22,10 @@ export async function GET(request: NextRequest) {
       }
     });
 
-    const viewMode = searchParams.get('viewMode') || 'mensual';
+    const rawViewMode = searchParams.get('viewMode');
+    const viewMode = (rawViewMode === 'mensual' || rawViewMode === 'diaria' || rawViewMode === 'anual')
+      ? rawViewMode as 'mensual' | 'diaria' | 'anual'
+      : 'mensual';
 
     const ventas = await getVentasMensuales(filtros, viewMode);
     return NextResponse.json(ventas);
