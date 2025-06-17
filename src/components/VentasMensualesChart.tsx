@@ -74,7 +74,8 @@ export default function VentasMensualesChart({ data: initialData, tiposDocumento
       setLoading(true);
       try {
         const params = new URLSearchParams();
-        Object.entries(filtros).forEach(([key, values]) => {
+        const filtrosAny = filtros as Record<string, any>;
+        Object.entries(filtrosAny).forEach(([key, values]) => {
           if (Array.isArray(values)) {
             values.forEach((v) => params.append(key, String(v)));
           } else if (values) {
@@ -197,9 +198,6 @@ export default function VentasMensualesChart({ data: initialData, tiposDocumento
   const dataKey2025 = showAccumulated ? 'ventas_2025_acum' : 'ventas_2025';
 
   const totalVendido = displayData.reduce((acc, item) => acc + toNumber(item.ventas_2024) + toNumber(item.ventas_2025), 0);
-
-  const totalMargen = displayData.reduce((acc, item) => acc + (item.margen ? toNumber(item.margen) : 0), 0);
-  const totalStock = displayData.reduce((acc, item) => acc + (item.stock ? toNumber(item.stock) : 0), 0);
 
   const exportToExcel = () => {
     const exportData = dataWithAccumulated.map((item) => ({
@@ -483,9 +481,9 @@ export default function VentasMensualesChart({ data: initialData, tiposDocumento
         >
           <Filter className="h-5 w-5 text-blue-600" />
           <span className="text-sm font-medium text-gray-700">Filtros adicionales</span>
-          {Object.keys(filtros).filter(key => Array.isArray(filtros[key]) && filtros[key].length > 0).length > 0 && (
+          {Object.keys(filtrosAny).filter(key => Array.isArray(filtrosAny[key]) && filtrosAny[key].length > 0).length > 0 && (
             <span className="bg-blue-100 text-blue-800 text-xs font-medium px-2.5 py-0.5 rounded-full">
-              {Object.keys(filtros).filter(key => Array.isArray(filtros[key]) && filtros[key].length > 0).length}
+              {Object.keys(filtrosAny).filter(key => Array.isArray(filtrosAny[key]) && filtrosAny[key].length > 0).length}
             </span>
           )}
         </button>
@@ -494,11 +492,11 @@ export default function VentasMensualesChart({ data: initialData, tiposDocumento
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-semibold text-gray-900">Filtros adicionales</h3>
               <div className="flex items-center space-x-2">
-                {Object.keys(filtros).filter(key => Array.isArray(filtros[key]) && filtros[key].length > 0).length > 0 && (
+                {Object.keys(filtrosAny).filter(key => Array.isArray(filtrosAny[key]) && filtrosAny[key].length > 0).length > 0 && (
                   <button
                     onClick={() => {
-                      Object.keys(filtros).forEach(key => {
-                        if (Array.isArray(filtros[key])) {
+                      Object.keys(filtrosAny).forEach(key => {
+                        if (Array.isArray(filtrosAny[key])) {
                           setFiltros(f => ({
                             ...f,
                             [key]: []
@@ -646,14 +644,6 @@ export default function VentasMensualesChart({ data: initialData, tiposDocumento
         <div>
           <span className="text-lg font-semibold text-gray-700 mr-2">Total vendido:</span>
           <span className="text-2xl font-bold text-blue-700">{formatCurrency(totalVendido)}</span>
-        </div>
-        <div>
-          <span className="text-lg font-semibold text-gray-700 mr-2">Margen:</span>
-          <span className="text-2xl font-bold text-green-700">{formatCurrency(totalMargen)}</span>
-        </div>
-        <div>
-          <span className="text-lg font-semibold text-gray-700 mr-2">Stock:</span>
-          <span className="text-2xl font-bold text-purple-700">{totalStock > 0 ? totalStock : '-'}</span>
         </div>
       </div>
       <div className="flex justify-between items-center">
