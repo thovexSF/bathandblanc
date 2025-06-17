@@ -728,7 +728,7 @@ export default function VentasMensualesChart({ data: initialData, tiposDocumento
                   fill="#10b981" 
                   radius={[2, 2, 0, 0]}
                 >
-                  <LabelList dataKey="variacion" position="top" formatter={value => `${value.toFixed(1)}%`} />
+                  <LabelList dataKey="variacion" position="top" formatter={(value: number) => `${value.toFixed(1)}%`} />
                 </Bar>
               </BarChart>
             )}
