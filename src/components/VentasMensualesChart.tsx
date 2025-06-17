@@ -76,9 +76,9 @@ export default function VentasMensualesChart({ data: initialData, tiposDocumento
         const params = new URLSearchParams();
         Object.entries(filtros).forEach(([key, values]) => {
           if (Array.isArray(values)) {
-            values.forEach((v) => params.append(key, v.toString()));
+            values.forEach((v) => params.append(key, String(v)));
           } else if (values) {
-            params.append(key, values.toString());
+            params.append(key, String(values));
           }
         });
         selectedYears.forEach((y) => params.append('años', y.toString()));
