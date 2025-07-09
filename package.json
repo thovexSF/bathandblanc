@@ -6,7 +6,8 @@
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "importar-ventas": "node importarVentasDiarias.js"
   },
   "dependencies": {
     "@radix-ui/react-select": "^2.2.5",

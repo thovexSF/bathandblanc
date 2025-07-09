@@ -6,5 +6,12 @@
   "deploy": {
     "startCommand": "npm start",
     "healthcheckPath": "/"
+  },
+  "cron": {
+    "importarVentasDiarias": {
+      "schedule": "0 6 * * *",
+      "command": "node importarVentasDiarias.js",
+      "description": "Importación diaria de ventas Bath & Blanc"
+    }
   }
 } 
