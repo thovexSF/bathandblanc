@@ -4,7 +4,15 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { Table, Download, Copy, Filter, X, Calendar } from 'lucide-react';
 import { VentasPorSucursal, TipoDocumento, Plataforma } from '@/lib/queries';
 import * as XLSX from 'xlsx';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import React from 'react';
+
+interface VentasPorSucursalConAnio extends VentasPorSucursal {
+  año: number;
+  ventas: number;
+  documentos: number;
+  ticket_promedio: number;
+}
 
 interface VentasSucursalChartProps {
   data: VentasPorSucursal[];
@@ -22,6 +30,171 @@ interface Filtros {
 const MONTHS = [1,2,3,4,5,6,7,8,9,10,11,12];
 const DAYS = Array.from({ length: 31 }, (_, i) => i + 1);
 
+// Crear un componente separado para los filtros
+const FiltrosAdicionales = React.memo(({ 
+  filtros, 
+  setFiltros, 
+  tiposDocumento, 
+  plataformas, 
+  empresas,
+  onClose 
+}: { 
+  filtros: Filtros;
+  setFiltros: (filtros: Filtros | ((prev: Filtros) => Filtros)) => void;
+  tiposDocumento: TipoDocumento[];
+  plataformas: Plataforma[];
+  empresas: string[];
+  onClose: () => void;
+}) => {
+  const handleFilterChange = useCallback((filterType: keyof Filtros, value: string, checked: boolean) => {
+    setFiltros((prev: Filtros) => {
+      const currentValues = prev[filterType] || [];
+      const newValues = checked
+        ? [...currentValues, value]
+        : currentValues.filter((v: string) => v !== value);
+      
+      return {
+        ...prev,
+        [filterType]: newValues.length > 0 ? newValues : undefined
+      };
+    });
+  }, [setFiltros]);
+
+  const clearFilter = useCallback((filterType: keyof Filtros) => {
+    setFiltros((prev: Filtros) => ({
+      ...prev,
+      [filterType]: undefined
+    }));
+  }, [setFiltros]);
+
+  const clearAllFilters = useCallback(() => {
+    setFiltros({});
+  }, [setFiltros]);
+
+  const hasActiveFilters = Object.values(filtros).some(value => value && value.length > 0);
+  const activeFiltersCount = Object.values(filtros).filter(value => Array.isArray(value) && value.length > 0).length;
+
+  return (
+    <div className="absolute z-50 mt-2 w-[400px] bg-white rounded-lg shadow-lg border border-gray-200 p-4">
+      <div className="flex justify-between items-center mb-4">
+        <h3 className="text-lg font-semibold text-gray-900">Filtros adicionales</h3>
+        <div className="flex items-center space-x-2">
+          {hasActiveFilters && (
+            <button
+              onClick={clearAllFilters}
+              className="text-sm text-gray-500 hover:text-gray-700 flex items-center"
+            >
+              <X className="h-4 w-4 mr-1" />
+              Limpiar todo
+            </button>
+          )}
+          <button
+            onClick={onClose}
+            className="text-sm text-gray-500 hover:text-gray-700"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+      </div>
+      <div className="space-y-4">
+        {/* Filtro Tipo de Documento */}
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-sm font-medium text-gray-700">
+              Tipo de Documento
+            </label>
+            {filtros.tipoDocumento && filtros.tipoDocumento.length > 0 && (
+              <button
+                onClick={() => clearFilter('tipoDocumento')}
+                className="text-xs text-gray-500 hover:text-gray-700"
+              >
+                Limpiar
+              </button>
+            )}
+          </div>
+          <div className="max-h-40 overflow-y-auto space-y-2 border border-gray-200 rounded-md p-2">
+            {tiposDocumento.map((tipo) => (
+              <label key={tipo.tipo_documento} className="flex items-center space-x-2 text-sm cursor-pointer hover:bg-gray-50 p-1 rounded">
+                <input
+                  type="checkbox"
+                  checked={filtros.tipoDocumento?.includes(tipo.tipo_documento) || false}
+                  onChange={(e) => handleFilterChange('tipoDocumento', tipo.tipo_documento, e.target.checked)}
+                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                <span className="flex-1">
+                  {tipo.tipo_documento} <span className="text-gray-500">({tipo.total_documentos?.toLocaleString('es-CL') ?? 0})</span>
+                </span>
+              </label>
+            ))}
+          </div>
+        </div>
+        {/* Filtro Plataforma */}
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-sm font-medium text-gray-700">
+              Plataforma
+            </label>
+            {filtros.plataforma && filtros.plataforma.length > 0 && (
+              <button
+                onClick={() => clearFilter('plataforma')}
+                className="text-xs text-gray-500 hover:text-gray-700"
+              >
+                Limpiar
+              </button>
+            )}
+          </div>
+          <div className="max-h-40 overflow-y-auto space-y-2 border border-gray-200 rounded-md p-2">
+            {plataformas.map((plataforma) => (
+              <label key={plataforma.plataforma} className="flex items-center space-x-2 text-sm cursor-pointer hover:bg-gray-50 p-1 rounded">
+                <input
+                  type="checkbox"
+                  checked={filtros.plataforma?.includes(plataforma.plataforma) || false}
+                  onChange={(e) => handleFilterChange('plataforma', plataforma.plataforma, e.target.checked)}
+                  className="rounded border-gray-300 text-yellow-600 focus:ring-yellow-500"
+                />
+                <span className="flex-1">
+                  {plataforma.plataforma} <span className="text-gray-500">({plataforma.total_documentos?.toLocaleString('es-CL') ?? 0})</span>
+                </span>
+              </label>
+            ))}
+          </div>
+        </div>
+        {/* Filtro Empresa */}
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-sm font-medium text-gray-700">
+              Empresa
+            </label>
+            {filtros.empresa && filtros.empresa.length > 0 && (
+              <button
+                onClick={() => clearFilter('empresa')}
+                className="text-xs text-gray-500 hover:text-gray-700"
+              >
+                Limpiar
+              </button>
+            )}
+          </div>
+          <div className="max-h-40 overflow-y-auto space-y-2 border border-gray-200 rounded-md p-2">
+            {empresas.map((empresa) => (
+              <label key={empresa} className="flex items-center space-x-2 text-sm cursor-pointer hover:bg-gray-50 p-1 rounded">
+                <input
+                  type="checkbox"
+                  checked={filtros.empresa?.includes(empresa) || false}
+                  onChange={(e) => handleFilterChange('empresa', empresa, e.target.checked)}
+                  className="rounded border-gray-300 text-green-600 focus:ring-green-500"
+                />
+                <span className="flex-1">{empresa}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+});
+
+FiltrosAdicionales.displayName = 'FiltrosAdicionales';
+
 export default function VentasSucursalChart({ 
   data, 
   tiposDocumento = [], 
@@ -31,13 +204,16 @@ export default function VentasSucursalChart({
   const [showTable, setShowTable] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [filtros, setFiltros] = useState<Filtros>({});
-  const [filteredData, setFilteredData] = useState<VentasPorSucursal[]>([]);
+  const [filteredData, setFilteredData] = useState<VentasPorSucursalConAnio[]>([]);
   const [loading, setLoading] = useState(false);
 
   const [availableYears, setAvailableYears] = useState<number[]>([]);
   const [selectedYears, setSelectedYears] = useState<number[]>([]);
-  const [selectedMonths, setSelectedMonths] = useState<number[]>(MONTHS);
-  const [selectedDays, setSelectedDays] = useState<number[]>(DAYS);
+  const [selectedMonths, setSelectedMonths] = useState<number[]>([]);
+  const [selectedDays, setSelectedDays] = useState<number[]>([]);
+
+  const hasActiveFilters = Object.values(filtros).some(value => value && value.length > 0);
+  const activeFiltersCount = Object.values(filtros).filter(value => Array.isArray(value) && value.length > 0).length;
 
   useEffect(() => {
     fetch('/api/available-years')
@@ -74,7 +250,7 @@ export default function VentasSucursalChart({
         (filtros.empresa || []).forEach(e => params.append('empresa', e));
         const res = await fetch(`/api/ventas-sucursal?${params.toString()}`);
         const data = await res.json();
-        setFilteredData(data);
+        setFilteredData(data as VentasPorSucursalConAnio[]);
       } catch (e) {
         setFilteredData([]);
       }
@@ -90,7 +266,8 @@ export default function VentasSucursalChart({
     (filtros.empresa || []).join(',')
   ]);
 
-  const handleFilterChange = (filterType: keyof Filtros, value: string, checked: boolean) => {
+  // Memoizar los handlers para evitar recreaciones innecesarias
+  const handleFilterChange = useCallback((filterType: keyof Filtros, value: string, checked: boolean) => {
     setFiltros(prev => {
       const currentValues = prev[filterType] || [];
       const newValues = checked
@@ -102,21 +279,13 @@ export default function VentasSucursalChart({
         [filterType]: newValues.length > 0 ? newValues : undefined
       };
     });
-  };
+  }, []);
 
-  const clearFilter = (filterType: keyof Filtros) => {
-    setFiltros(prev => ({
-      ...prev,
-      [filterType]: undefined
-    }));
-  };
-
-  const clearAllFilters = () => {
-    setFiltros({});
-  };
-
-  const hasActiveFilters = Object.values(filtros).some(value => value && value.length > 0);
-  const activeFiltersCount = Object.values(filtros).filter(value => Array.isArray(value) && value.length > 0).length;
+  // Memoizar los datos filtrados para evitar recálculos innecesarios
+  const filteredDataMemo = useMemo(() => {
+    if (!Array.isArray(filteredData)) return [];
+    return filteredData;
+  }, [filteredData]);
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('es-CL', {
@@ -168,7 +337,7 @@ export default function VentasSucursalChart({
         `#${index + 1}`,
         item.sucursal,
         formatCurrencyFull(item.total_ventas),
-        item.total_documentos.toLocaleString('es-CL'),
+        (item.total_documentos ?? 0).toLocaleString('es-CL'),
         formatCurrencyFull(item.ticket_promedio)
       ].join('\t');
     });
@@ -233,43 +402,88 @@ export default function VentasSucursalChart({
   }
 
   // Mostrar todas las sucursales (máximo 9)
-  const sucursalesToShow = filteredData.slice(0, 9);
+  const sucursalesToShow = Array.isArray(filteredData) ? filteredData.slice(0, 9) : [];
+
+  // Obtener años únicos de los datos
+  const years = Array.from(new Set(filteredData.map(item => item.año))).sort((a, b) => Number(a) - Number(b));
+
+  // Calcular totales por año
+  const totales = years.reduce((acc, year) => {
+    const dataYear = filteredData.filter(item => item.año === year);
+    acc[year] = {
+      ventas: dataYear.reduce((sum, item) => sum + item.ventas, 0),
+      documentos: dataYear.reduce((sum, item) => sum + item.documentos, 0),
+      ticket_promedio: dataYear.reduce((sum, item) => sum + item.ticket_promedio, 0) / dataYear.length
+    };
+    return acc;
+  }, {} as Record<number, { ventas: number; documentos: number; ticket_promedio: number }>);
 
   // Preparar datos para el gráfico - ahora con nombres completos
-  const chartData = sucursalesToShow.map((item, index) => {
-    return {
-      name: item.sucursal, // Nombre completo
-      fullName: item.sucursal,
-      empresa: item.empresa,
-      total_ventas: item.total_ventas,
-      total_documentos: item.total_documentos,
-      ticket_promedio: item.ticket_promedio,
-      ranking: index + 1
-    };
-  });
+  const chartData = filteredData
+    .filter(item => item.año === years[0])
+    .map((item, index) => {
+      const dataByYear = years.map(year => {
+        const dataYear = filteredData.find(d => d.sucursal === item.sucursal && d.año === year);
+        return {
+          año: year,
+          ventas: dataYear?.ventas || 0,
+          documentos: dataYear?.documentos || 0,
+          ticket_promedio: dataYear?.ticket_promedio || 0
+        };
+      });
+
+      return {
+        name: item.sucursal,
+        fullName: item.sucursal,
+        ranking: index + 1,
+        ...dataByYear.reduce((acc, curr) => ({
+          ...acc,
+          [`ventas_${curr.año}`]: curr.ventas,
+          [`documentos_${curr.año}`]: curr.documentos,
+          [`ticket_${curr.año}`]: curr.ticket_promedio
+        }), {})
+      };
+    });
 
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length > 0) {
       const data = payload[0].payload;
+      // Obtener los años presentes en el objeto data
+      const yearRegex = /ventas_(\d{4})/g;
+      const years = Object.keys(data)
+        .map(key => {
+          const match = key.match(yearRegex);
+          return match ? key.split('_')[1] : null;
+        })
+        .filter((year, idx, arr) => year && arr.indexOf(year) === idx);
+      // Ordenar años de mayor a menor
+      years.sort((a, b) => Number(b) - Number(a));
+      // Calcular comparación de ventas entre los dos años más recientes
+      let comparacion = null;
+      if (years.length >= 2) {
+        const ventasActual = Number(data[`ventas_${years[0]}`]) || 0;
+        const ventasAnterior = Number(data[`ventas_${years[1]}`]) || 0;
+        if (ventasAnterior > 0) {
+          comparacion = Math.round(((ventasActual - ventasAnterior) / ventasAnterior) * 1000) / 10;
+        } else if (ventasActual > 0) {
+          comparacion = 100;
+        } else {
+          comparacion = 0;
+        }
+      }
       return (
         <div className="bg-white p-3 border border-gray-200 rounded-lg shadow-lg">
           <div className="space-y-1">
-            <p className="font-semibold text-gray-900">#{data.ranking} - {data.fullName}</p>
-            <p className="text-sm text-gray-600">{data.empresa}</p>
-            <div className="space-y-1 text-sm">
-              <div>
-                <span className="text-gray-600">Ventas: </span>
-                <span className="font-medium">{formatCurrencyFull(data.total_ventas)}</span>
+            <p className="font-semibold text-gray-900">{data.fullName}</p>
+            {years.map(year => (
+              <div key={year} className="text-sm">
+                <span className="font-semibold text-blue-700">{year}:</span> <span className="font-medium">{formatCurrencyFull(Number(data[`ventas_${year}`]) ?? 0)}</span>
+                <span className="ml-2 text-xs text-gray-500">Ticket: {formatCurrencyFull(Number(data[`ticket_${year}`]) ?? 0)}</span>
               </div>
-              <div>
-                <span className="text-gray-600">Documentos: </span>
-                <span className="font-medium">{data.total_documentos.toLocaleString('es-CL')}</span>
-              </div>
-              <div>
-                <span className="text-gray-600">Ticket promedio: </span>
-                <span className="font-medium">{formatCurrencyFull(data.ticket_promedio)}</span>
-              </div>
-            </div>
+            ))}
+            {comparacion !== null && (
+              <div className={`text-sm font-semibold ${comparacion >= 0 ? 'text-green-600' : 'text-red-600'}`}>Comparación: {comparacion}%</div>
+            )}
           </div>
         </div>
       );
@@ -300,52 +514,84 @@ export default function VentasSucursalChart({
     );
   };
 
-  const TableView = () => (
-    <div className="overflow-x-auto">
-      <table className="min-w-full bg-white border border-gray-200">
-        <thead className="bg-gray-50">
-          <tr>
-            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b">
-              Ranking
-            </th>
-            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b">
-              Sucursal
-            </th>
-            <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider border-b">
-              Total Ventas
-            </th>
-            <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider border-b">
-              Documentos
-            </th>
-            <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider border-b">
-              Ticket Promedio
-            </th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-gray-200">
-          {filteredData.map((sucursal, index) => (
-            <tr key={sucursal.sucursal} className="hover:bg-gray-50">
-              <td className="px-4 py-2 text-sm font-medium text-gray-900 border-b">
-                #{index + 1}
-              </td>
-              <td className="px-4 py-2 text-sm text-gray-900 border-b">
-                {sucursal.sucursal}
-              </td>
-              <td className="px-4 py-2 text-sm text-gray-900 text-right border-b font-medium">
-                {formatCurrencyFull(sucursal.total_ventas)}
-              </td>
-              <td className="px-4 py-2 text-sm text-gray-900 text-right border-b">
-                {sucursal.total_documentos.toLocaleString('es-CL')}
-              </td>
-              <td className="px-4 py-2 text-sm text-gray-900 text-right border-b">
-                {formatCurrencyFull(sucursal.ticket_promedio)}
-              </td>
+  const TableView = () => {
+    return (
+      <div className="overflow-x-auto">
+        <table className="min-w-full bg-white border border-gray-200">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b">
+                Ranking
+              </th>
+              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b">
+                Sucursal
+              </th>
+              {years.map(year => (
+                <React.Fragment key={year}>
+                  <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider border-b">
+                    Ventas {year}
+                  </th>
+                  <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider border-b">
+                    Documentos {year}
+                  </th>
+                  <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider border-b">
+                    Ticket Promedio {year}
+                  </th>
+                </React.Fragment>
+              ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
+          </thead>
+          <tbody className="divide-y divide-gray-200">
+            {filteredData.filter(item => item.año === years[0]).map((sucursal, index) => (
+              <tr key={sucursal.sucursal} className="hover:bg-gray-50">
+                <td className="px-4 py-2 text-sm font-medium text-gray-900 border-b">
+                  #{index + 1}
+                </td>
+                <td className="px-4 py-2 text-sm text-gray-900 border-b">
+                  {sucursal.sucursal}
+                </td>
+                {years.map(year => {
+                  const dataYear = filteredData.find(item => item.sucursal === sucursal.sucursal && item.año === year);
+                  return (
+                    <React.Fragment key={year}>
+                      <td className="px-4 py-2 text-sm text-gray-900 text-right border-b font-medium">
+                        {formatCurrencyFull(dataYear?.ventas || 0)}
+                      </td>
+                      <td className="px-4 py-2 text-sm text-gray-900 text-right border-b">
+                        {(dataYear?.documentos ?? 0).toLocaleString('es-CL')}
+                      </td>
+                      <td className="px-4 py-2 text-sm text-gray-900 text-right border-b">
+                        {formatCurrencyFull(dataYear?.ticket_promedio || 0)}
+                      </td>
+                    </React.Fragment>
+                  );
+                })}
+              </tr>
+            ))}
+            {/* Fila de totales */}
+            <tr className="bg-gray-50 font-bold">
+              <td className="px-4 py-2 text-sm text-gray-900 border-b" colSpan={2}>
+                Total
+              </td>
+              {years.map(year => (
+                <React.Fragment key={year}>
+                  <td className="px-4 py-2 text-sm text-gray-900 text-right border-b">
+                    {formatCurrencyFull(totales[year].ventas)}
+                  </td>
+                  <td className="px-4 py-2 text-sm text-gray-900 text-right border-b">
+                    {totales[year].documentos.toLocaleString('es-CL')}
+                  </td>
+                  <td className="px-4 py-2 text-sm text-gray-900 text-right border-b">
+                    {formatCurrencyFull(totales[year].ticket_promedio)}
+                  </td>
+                </React.Fragment>
+              ))}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    );
+  };
 
   const chartOptions = {
     responsive: true,
@@ -371,6 +617,8 @@ export default function VentasSucursalChart({
       },
     },
   };
+
+  const safeFilteredData = Array.isArray(filteredData) ? filteredData : [];
 
   return (
     <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
@@ -486,121 +734,14 @@ export default function VentasSucursalChart({
             )}
           </button>
           {showFilters && (
-            <div className="absolute z-50 mt-2 w-[400px] bg-white rounded-lg shadow-lg border border-gray-200 p-4">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-semibold text-gray-900">Filtros adicionales</h3>
-                <div className="flex items-center space-x-2">
-                  {hasActiveFilters && (
-                    <button
-                      onClick={clearAllFilters}
-                      className="text-sm text-gray-500 hover:text-gray-700 flex items-center"
-                    >
-                      <X className="h-4 w-4 mr-1" />
-                      Limpiar todo
-                    </button>
-                  )}
-                  <button
-                    onClick={() => setShowFilters(false)}
-                    className="text-sm text-gray-500 hover:text-gray-700"
-                  >
-                    <X className="h-5 w-5" />
-                  </button>
-                </div>
-              </div>
-              <div className="space-y-4">
-                {/* Filtro Tipo de Documento */}
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="text-sm font-medium text-gray-700">
-                      Tipo de Documento
-                    </label>
-                    {filtros.tipoDocumento && filtros.tipoDocumento.length > 0 && (
-                      <button
-                        onClick={() => clearFilter('tipoDocumento')}
-                        className="text-xs text-gray-500 hover:text-gray-700"
-                      >
-                        Limpiar
-                      </button>
-                    )}
-                  </div>
-                  <div className="max-h-40 overflow-y-auto space-y-2 border border-gray-200 rounded-md p-2">
-                    {tiposDocumento.map((tipo) => (
-                      <label key={tipo.tipo_documento} className="flex items-center space-x-2 text-sm cursor-pointer hover:bg-gray-50 p-1 rounded">
-                        <input
-                          type="checkbox"
-                          checked={filtros.tipoDocumento?.includes(tipo.tipo_documento) || false}
-                          onChange={(e) => handleFilterChange('tipoDocumento', tipo.tipo_documento, e.target.checked)}
-                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                        />
-                        <span className="flex-1">
-                          {tipo.tipo_documento} <span className="text-gray-500">({tipo.total_documentos?.toLocaleString('es-CL') ?? 0})</span>
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-                {/* Filtro Plataforma */}
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="text-sm font-medium text-gray-700">
-                      Plataforma
-                    </label>
-                    {filtros.plataforma && filtros.plataforma.length > 0 && (
-                      <button
-                        onClick={() => clearFilter('plataforma')}
-                        className="text-xs text-gray-500 hover:text-gray-700"
-                      >
-                        Limpiar
-                      </button>
-                    )}
-                  </div>
-                  <div className="max-h-40 overflow-y-auto space-y-2 border border-gray-200 rounded-md p-2">
-                    {plataformas.map((plataforma) => (
-                      <label key={plataforma.plataforma} className="flex items-center space-x-2 text-sm cursor-pointer hover:bg-gray-50 p-1 rounded">
-                        <input
-                          type="checkbox"
-                          checked={filtros.plataforma?.includes(plataforma.plataforma) || false}
-                          onChange={(e) => handleFilterChange('plataforma', plataforma.plataforma, e.target.checked)}
-                          className="rounded border-gray-300 text-yellow-600 focus:ring-yellow-500"
-                        />
-                        <span className="flex-1">
-                          {plataforma.plataforma} <span className="text-gray-500">({plataforma.total_documentos?.toLocaleString('es-CL') ?? 0})</span>
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-                {/* Filtro Empresa */}
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="text-sm font-medium text-gray-700">
-                      Empresa
-                    </label>
-                    {filtros.empresa && filtros.empresa.length > 0 && (
-                      <button
-                        onClick={() => clearFilter('empresa')}
-                        className="text-xs text-gray-500 hover:text-gray-700"
-                      >
-                        Limpiar
-                      </button>
-                    )}
-                  </div>
-                  <div className="max-h-40 overflow-y-auto space-y-2 border border-gray-200 rounded-md p-2">
-                    {empresas.map((empresa) => (
-                      <label key={empresa} className="flex items-center space-x-2 text-sm cursor-pointer hover:bg-gray-50 p-1 rounded">
-                        <input
-                          type="checkbox"
-                          checked={filtros.empresa?.includes(empresa) || false}
-                          onChange={(e) => handleFilterChange('empresa', empresa, e.target.checked)}
-                          className="rounded border-gray-300 text-green-600 focus:ring-green-500"
-                        />
-                        <span className="flex-1">{empresa}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
+            <FiltrosAdicionales
+              filtros={filtros}
+              setFiltros={setFiltros}
+              tiposDocumento={tiposDocumento}
+              plataformas={plataformas}
+              empresas={empresas}
+              onClose={() => setShowFilters(false)}
+            />
           )}
         </div>
 
@@ -666,13 +807,16 @@ export default function VentasSucursalChart({
                   stroke="#6b7280"
                 />
                 <Tooltip content={<CustomTooltip />} />
-                <Bar 
-                  dataKey="total_ventas" 
-                  fill="#10b981"
-                  radius={[4, 4, 0, 0]}
-                >
-                  <LabelList content={renderRankingLabel} />
-                </Bar>
+                {years.map((year, index) => (
+                  <Bar 
+                    key={year}
+                    dataKey={`ventas_${year}`}
+                    fill={index === 0 ? "#10b981" : "#3b82f6"}
+                    radius={[4, 4, 0, 0]}
+                  >
+                    <LabelList content={renderRankingLabel} />
+                  </Bar>
+                ))}
               </BarChart>
             </ResponsiveContainer>
           </div>

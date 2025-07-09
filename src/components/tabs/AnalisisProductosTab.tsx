@@ -4,7 +4,7 @@ import React from 'react';
 import { Package, Target, Award } from 'lucide-react';
 import { TopProductos, VentasPorCategoria } from '@/lib/queries';
 import TopProductosTable from '@/components/TopProductosTable';
-import VentasCategoriaTable from '@/components/VentasCategoriaTable';
+import ComparacionCostosTable from '@/components/ComparacionCostosTable';
 
 interface AnalisisProductosTabProps {
   topProductos: TopProductos[];
@@ -87,6 +87,13 @@ export default function AnalisisProductosTab({
           </div>
         </div>
       )}
+
+      {/* Comparación de Costos */}
+      <div className="bg-white rounded-lg shadow">
+        <div className="p-6">
+          <ComparacionCostosTable />
+        </div>
+      </div>
     </div>
   );
 } 

@@ -280,8 +280,8 @@ export default function VentasMensualesChart({ data: initialData, tiposDocumento
       return (
         <div className="bg-white p-3 border border-gray-200 rounded-lg shadow-lg">
           <p className="font-semibold text-gray-900">{label}</p>
-          <div className="text-sm text-gray-700">Ventas 2024: <span className="font-medium">{data.ventas_2024?.toLocaleString('es-CL')}</span></div>
-          <div className="text-sm text-gray-700">Ventas 2025: <span className="font-medium">{data.ventas_2025?.toLocaleString('es-CL')}</span></div>
+          <div className="text-sm text-gray-700">Ventas 2024: <span className="font-medium">{formatCurrencyFull(data.ventas_2024)}</span></div>
+          <div className="text-sm text-gray-700">Ventas 2025: <span className="font-medium">{formatCurrencyFull(data.ventas_2025)}</span></div>
           <div className="text-sm text-blue-700 font-semibold">Variación: {data.variacion?.toFixed(1)}%</div>
         </div>
       );
@@ -714,7 +714,7 @@ export default function VentasMensualesChart({ data: initialData, tiposDocumento
                   fontSize={11}
                   tickFormatter={formatCurrencyTable}
                 />
-                <Tooltip />
+                <Tooltip content={<CustomTooltip />} />
                 <Legend />
                 <Bar 
                   dataKey="ventas_2024"

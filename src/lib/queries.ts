@@ -135,6 +135,18 @@ export interface VentasFiltradas {
   ticket_promedio: number;
 }
 
+export interface ComparacionCostos {
+  sku: string;
+  producto_servicio: string;
+  variante: string;
+  costo_stock_bodega: number;
+  costo_ventas_bodega: number;
+  diferencia: number;
+  porcentaje_diferencia: number;
+  stock_disponible_bodega: number;
+  ventas_ultimos_30_dias: number;
+}
+
 // Helper function para convertir PostgreSQL bigints a números
 const toNumber = (value: any): number => {
   if (typeof value === 'number') return value;
@@ -329,17 +341,34 @@ export async function getVentasMensuales(filtros: Filtros = {}, viewMode: 'mensu
 }
 
 // Ventas por sucursal con filtros
-export async function getVentasPorSucursal(filtros: Filtros = {}): Promise<VentasPorSucursal[]> {
+export async function getVentasPorSucursal(filtros: Filtros = {}): Promise<any[]> {
   const { whereClause, params } = buildWhereClause(filtros);
-  
+
+  // Si no hay filtro de meses ni días, limitar hasta el último día registrado de ventas del año más reciente
+  let extraWhere = '';
+  if ((!filtros.meses || filtros.meses.length === 0) && (!filtros.dias || filtros.dias.length === 0) && filtros.años && filtros.años.length > 1) {
+    // Buscar el año más reciente
+    const yearActual = Math.max(...filtros.años);
+    const yearAnterior = Math.min(...filtros.años);
+    // Obtener el último día con ventas del año más reciente
+    const lastDayQuery = `SELECT MAX(fecha) as last_day FROM ventas WHERE EXTRACT(YEAR FROM fecha) = $1`;
+    const lastDayResult = await pool.query(lastDayQuery, [yearActual]);
+    const lastDay = lastDayResult.rows[0]?.last_day;
+    const lastDayISO = lastDay ? new Date(lastDay).toISOString().slice(0, 10) : null;
+    if (lastDayISO) {
+      // Limitar ambas series hasta ese día (mismo mes y día para ambos años)
+      extraWhere = `AND ( (EXTRACT(YEAR FROM fecha) = $${params.length + 1} AND fecha <= '${lastDayISO}') OR (EXTRACT(YEAR FROM fecha) = $${params.length + 2} AND fecha <= (DATE_TRUNC('year', fecha) + (DATE_PART('doy', DATE '${lastDayISO}') - 1) * INTERVAL '1 day')) )`;
+      // Agregar los años a los parámetros para que coincidan con los placeholders
+      params.push(yearActual, yearAnterior);
+    }
+  }
+
   const query = `
     SELECT 
       sucursal,
-      empresa,
-      tipo_documento,
-      plataforma,
-      ROUND(SUM(subtotal_neto))::numeric as total_ventas,
-      COUNT(DISTINCT nro_documento)::numeric as total_documentos,
+      EXTRACT(YEAR FROM fecha) as año,
+      ROUND(SUM(subtotal_neto))::numeric as ventas,
+      COUNT(DISTINCT nro_documento)::numeric as documentos,
       CASE 
         WHEN COUNT(DISTINCT nro_documento) > 0 
         THEN ROUND(SUM(subtotal_neto) / COUNT(DISTINCT nro_documento))::numeric
@@ -347,10 +376,11 @@ export async function getVentasPorSucursal(filtros: Filtros = {}): Promise<Venta
       END as ticket_promedio
     FROM ventas 
     ${whereClause}
-    GROUP BY sucursal, empresa, tipo_documento, plataforma
-    ORDER BY total_ventas DESC;
+    ${extraWhere}
+    GROUP BY sucursal, EXTRACT(YEAR FROM fecha)
+    ORDER BY sucursal, año DESC;
   `;
-  
+
   const result = await pool.query(query, params);
   return processResults(result.rows);
 }
@@ -768,5 +798,53 @@ export async function getVentasFiltradas(filtros: Filtros = {}): Promise<VentasF
   `;
   
   const result = await pool.query(query, params);
+  return processResults(result.rows);
+} 
+
+// Comparación de costos entre stock de bodega y ventas de bodega
+export async function getComparacionCostos(limite: number = 50): Promise<ComparacionCostos[]> {
+  const query = `
+    WITH stock_bodega AS (
+      SELECT DISTINCT ON (sku) 
+        sku, producto_servicio, variante, costo_unitario, stock_disponible
+      FROM stock_historico 
+      WHERE sucursal ILIKE '%bodega%'
+      ORDER BY sku, fecha DESC
+    ),
+    ventas_bodega AS (
+      SELECT 
+        sku,
+        AVG(costo_neto / NULLIF(cantidad, 0)) as costo_promedio_ventas,
+        SUM(cantidad) as ventas_ultimos_30_dias
+      FROM ventas 
+      WHERE sucursal ILIKE '%bodega%'
+        AND fecha >= CURRENT_DATE - INTERVAL '30 days'
+        AND costo_neto IS NOT NULL
+        AND cantidad > 0
+      GROUP BY sku
+    )
+    SELECT 
+      s.sku,
+      s.producto_servicio,
+      COALESCE(s.variante, 'Sin Variante') as variante,
+      COALESCE(s.costo_unitario, 0)::numeric as costo_stock_bodega,
+      COALESCE(v.costo_promedio_ventas, 0)::numeric as costo_ventas_bodega,
+      COALESCE(v.costo_promedio_ventas, 0) - COALESCE(s.costo_unitario, 0) as diferencia,
+      CASE 
+        WHEN COALESCE(s.costo_unitario, 0) > 0 
+        THEN ROUND(((COALESCE(v.costo_promedio_ventas, 0) - COALESCE(s.costo_unitario, 0)) / COALESCE(s.costo_unitario, 0)) * 100, 2)
+        ELSE 0 
+      END as porcentaje_diferencia,
+      COALESCE(s.stock_disponible, 0)::numeric as stock_disponible_bodega,
+      COALESCE(v.ventas_ultimos_30_dias, 0)::numeric as ventas_ultimos_30_dias
+    FROM stock_bodega s
+    LEFT JOIN ventas_bodega v ON s.sku = v.sku
+    WHERE s.costo_unitario IS NOT NULL 
+      AND s.costo_unitario > 0
+    ORDER BY ABS(COALESCE(v.costo_promedio_ventas, 0) - COALESCE(s.costo_unitario, 0)) DESC
+    LIMIT $1;
+  `;
+  
+  const result = await pool.query(query, [limite]);
   return processResults(result.rows);
 } 
