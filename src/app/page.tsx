@@ -21,10 +21,11 @@ import FilterPanel from '@/components/FilterPanel';
 import VentasPlataformaChart from '@/components/VentasPlataformaChart';
 import MargenSucursalChart from '@/components/MargenSucursalChart';
 import VentasCategoriaTable from '@/components/VentasCategoriaTable';
-import TabNavigation from '@/components/TabNavigation';
+
 import ResumenVentasTab from '@/components/tabs/ResumenVentasTab';
 import AnalisisProductosTab from '@/components/tabs/AnalisisProductosTab';
 import StockTab from '@/components/tabs/StockTab';
+import ListaPreciosTab from '@/components/tabs/ListaPreciosTab';
 
 export default function Dashboard() {
   // Estados para los datos
@@ -58,7 +59,8 @@ export default function Dashboard() {
   const [filtersInitialized, setFiltersInitialized] = useState(false);
 
   // Estado para las pestañas
-  const [activeTab, setActiveTab] = useState('resumen-ventas');
+  const [activeTab, setActiveTab] = useState('stock');
+  const [activeSection, setActiveSection] = useState('dashboard-ventas');
 
   // Cargar opciones de filtros (solo una vez)
   useEffect(() => {
@@ -267,23 +269,53 @@ export default function Dashboard() {
       {/* Header */}
       <header className="bg-white shadow-sm border-b">
         <div className="max-w-full mx-auto px-8 sm:px-12 lg:px-16">
-          <div className="flex justify-between items-center py-6">
-            <div className="flex items-center">
+          <div className="flex justify-between items-center py-3">
+            <div className="flex flex-col items-start">
+              <p className="text-gray-800 text-lg font-bold tracking-wide mb-1">
+                Dashboard Ventas y Stock
+              </p>
               {/* Logo */}
               <img 
                 src="/logo.png" 
                 alt="Bath & Blanc Logo" 
-                className="h-20 w-auto mr-8"
+                className="h-3 w-auto ml-1"
               />
-              <div>
-                <h1 className="text-3xl font-bold text-gray-900">
-                  Dashboard Ventas
-                </h1>
-                <p className="text-gray-600 mt-1">
-                  Bath & Blanc - Análisis de Ventas 2024-2025
-                </p>
-              </div>
             </div>
+            
+            {/* Navigation */}
+            <nav className="flex items-center space-x-2">
+              <button
+                onClick={() => setActiveTab('resumen-ventas')}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  activeTab === 'resumen-ventas'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                }`}
+              >
+                Resumen Ventas
+              </button>
+              <button
+                onClick={() => setActiveTab('analisis-productos')}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  activeTab === 'analisis-productos'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                }`}
+              >
+                Análisis Productos
+              </button>
+              <button
+                onClick={() => setActiveTab('stock')}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  activeTab === 'stock'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                }`}
+              >
+                Inventario Consolidado
+              </button>
+            </nav>
+            
             <div className="flex items-center space-x-4">
               <div className="text-sm text-gray-500">
                 Última actualización: {new Date().toLocaleDateString('es-CL')}
@@ -296,41 +328,38 @@ export default function Dashboard() {
         </div>
       </header>
 
-      {/* Tabs pegadas al header */}
-      <TabNavigation activeTab={activeTab} onTabChange={setActiveTab} />
-
       {/* Main Content */}
       <main className="max-w-full mx-auto px-8 sm:px-12 lg:px-16 py-8">
-        {/* Contenido de las Pestañas */}
-        {activeTab === 'resumen-ventas' && (
-          <ResumenVentasTab
-            ventasMensuales={ventasMensuales}
-            ventasSucursal={ventasSucursal}
-            ventasPlataforma={ventasPlataforma}
-            margenSucursal={margenSucursal}
-            ventasFiltradas={ventasFiltradas}
-            filtros={filtros}
-            onFiltrosChange={handleFiltrosChange}
-            dataLoading={dataLoading}
-            tiposDocumento={tiposDocumento}
-            plataformas={plataformas}
-            empresas={empresas}
-            sucursales={sucursales}
-            resumen={resumen}
-          />
-        )}
-
-        {activeTab === 'analisis-productos' && (
-          <AnalisisProductosTab
-            topProductos={topProductos}
-            ventasCategoria={ventasCategoria}
-            dataLoading={dataLoading}
-          />
-        )}
-
-        {activeTab === 'stock' && (
-          <StockTab dataLoading={dataLoading} />
-        )}
+        {/* Contenido de las Pestañas - Mantener montados todos los tabs, solo ocultar visualmente los inactivos */}
+        <div>
+          <div style={{ display: activeTab === 'resumen-ventas' ? 'block' : 'none' }}>
+            <ResumenVentasTab
+              ventasMensuales={ventasMensuales}
+              ventasSucursal={ventasSucursal}
+              ventasPlataforma={ventasPlataforma}
+              margenSucursal={margenSucursal}
+              ventasFiltradas={ventasFiltradas}
+              filtros={filtros}
+              onFiltrosChange={handleFiltrosChange}
+              dataLoading={dataLoading}
+              tiposDocumento={tiposDocumento}
+              plataformas={plataformas}
+              empresas={empresas}
+              sucursales={sucursales}
+              resumen={resumen}
+            />
+          </div>
+          <div style={{ display: activeTab === 'analisis-productos' ? 'block' : 'none' }}>
+            <AnalisisProductosTab
+              topProductos={topProductos}
+              ventasCategoria={ventasCategoria}
+              dataLoading={dataLoading}
+            />
+          </div>
+          <div style={{ display: activeTab === 'stock' ? 'block' : 'none' }}>
+            <StockTab dataLoading={dataLoading} />
+          </div>
+        </div>
       </main>
     </div>
   );

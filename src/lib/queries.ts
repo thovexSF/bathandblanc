@@ -208,17 +208,21 @@ export async function getEmpresas(): Promise<string[]> {
 }
 
 // Obtener sucursales disponibles
-export async function getSucursales(): Promise<string[]> {
+export async function getSucursales(): Promise<{ sucursal: string; empresa: string }[]> {
   const query = `
-    SELECT DISTINCT sucursal
-    FROM ventas 
+    SELECT DISTINCT sucursal, empresa
+    FROM stock_historico 
     WHERE fecha IS NOT NULL 
       AND sucursal IS NOT NULL
-    ORDER BY sucursal;
+      AND empresa IS NOT NULL
+    ORDER BY empresa, sucursal;
   `;
   
   const result = await pool.query(query);
-  return result.rows.map(row => row.sucursal);
+  return result.rows.map(row => ({
+    sucursal: row.sucursal,
+    empresa: row.empresa
+  }));
 }
 
 // Función helper para construir la cláusula WHERE con filtros múltiples

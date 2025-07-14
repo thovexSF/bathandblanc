@@ -1,6 +1,6 @@
 'use client';
 
-import { TrendingUp, Package, Archive } from 'lucide-react';
+import { TrendingUp, Package, Archive, DollarSign } from 'lucide-react';
 
 interface TabNavigationProps {
   activeTab: string;
@@ -25,6 +25,12 @@ const tabs = [
     name: 'Stock',
     icon: Archive,
     description: 'Gestión y análisis de inventario'
+  },
+  {
+    id: 'lista-precios',
+    name: 'Lista de Precios',
+    icon: DollarSign,
+    description: 'Gestión y consulta de precios por empresa'
   }
 ];
 
